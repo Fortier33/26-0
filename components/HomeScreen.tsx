@@ -52,9 +52,6 @@ export function HomeScreen({ myTeamName, onChangeTeamName, onStartDraft }: HomeS
             <span className="inline-block ml-3 group-hover:translate-x-1 transition-transform">→</span>
           </button>
 
-          <div className="mt-8 lg:hidden flex justify-center">
-            <TerrainPreview />
-          </div>
         </section>
 
         <section className="hidden lg:flex justify-center items-center">
