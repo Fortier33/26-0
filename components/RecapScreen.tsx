@@ -192,7 +192,7 @@ export function RecapScreen({
         </div>
 
         {/* XV grid */}
-        <div className="flex-1 min-h-0 flex flex-col px-5 py-3 overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col px-5 py-3">
           <p className="text-[var(--c-faint)] uppercase tracking-[0.4em] text-[7px] font-bold mb-2 flex-shrink-0">
             Mon XV
           </p>
@@ -212,7 +212,7 @@ export function RecapScreen({
                   <span className="text-[var(--c-faint)] text-[8px] font-black w-4 text-right tabular-nums shrink-0">
                     {jersey}
                   </span>
-                  <span className="flex-1 font-black text-[11px] truncate uppercase tracking-wide text-c-fg min-w-0">
+                  <span className="flex-1 font-black text-[11px] truncate uppercase tracking-wide text-c-fg min-w-0 leading-normal">
                     {lastName}
                   </span>
                   <span
