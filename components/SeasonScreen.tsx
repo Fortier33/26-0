@@ -536,19 +536,28 @@ function StandingsTable({ standings, played }: { standings: StandingRow[]; playe
       {standings.map((row, i) => {
         const isTop6 = i < 6;
         return (
-          <div key={row.name} className={`flex items-center gap-2 px-4 py-2.5 border-b border-[var(--c-border-lo)] ${row.isMe ? "bg-c-gold/8" : ""}`}>
-            <span className={`text-[10px] font-black w-5 text-center tabular-nums ${i === 0 ? "text-c-gold" : isTop6 ? "text-[var(--c-muted)]" : "text-[var(--c-faint)]"}`}>
-              {i + 1}
-            </span>
-            <span className={`flex-1 text-[11px] font-black truncate ${row.isMe ? "text-c-gold" : isTop6 ? "text-c-fg" : "text-[var(--c-muted)]"}`}>
-              {row.isMe ? `▶ ${row.name}` : stripSeason(row.name)}
-            </span>
-            <span className="text-[var(--c-muted)] text-[10px] tabular-nums w-6 text-center">{row.won}</span>
-            <span className="text-[var(--c-muted)] text-[10px] tabular-nums w-6 text-center">{row.drawn}</span>
-            <span className="text-[var(--c-muted)] text-[10px] tabular-nums w-6 text-center">{row.lost}</span>
-            <span className={`text-[11px] font-black tabular-nums w-8 text-right ${row.isMe ? "text-c-gold" : isTop6 ? "text-c-fg/80" : "text-[var(--c-muted)]"}`}>
-              {row.points}
-            </span>
+          <div key={row.name}>
+            {i === 6 && (
+              <div className="flex items-center gap-2 px-4 py-1">
+                <div className="flex-1 h-px bg-c-gold/40" />
+                <span className="text-c-gold text-[8px] font-black uppercase tracking-[0.3em] shrink-0">Playoffs</span>
+                <div className="flex-1 h-px bg-c-gold/40" />
+              </div>
+            )}
+            <div className={`flex items-center gap-2 px-4 py-2.5 border-b border-[var(--c-border-lo)] ${row.isMe ? "bg-c-gold/8" : ""}`}>
+              <span className={`text-[10px] font-black w-5 text-center tabular-nums ${i === 0 ? "text-c-gold" : isTop6 ? "text-[var(--c-muted)]" : "text-[var(--c-faint)]"}`}>
+                {i + 1}
+              </span>
+              <span className={`flex-1 text-[11px] font-black truncate ${row.isMe ? "text-c-gold" : isTop6 ? "text-c-fg" : "text-[var(--c-muted)]"}`}>
+                {row.isMe ? `▶ ${row.name}` : stripSeason(row.name)}
+              </span>
+              <span className="text-[var(--c-muted)] text-[10px] tabular-nums w-6 text-center">{row.won}</span>
+              <span className="text-[var(--c-muted)] text-[10px] tabular-nums w-6 text-center">{row.drawn}</span>
+              <span className="text-[var(--c-muted)] text-[10px] tabular-nums w-6 text-center">{row.lost}</span>
+              <span className={`text-[11px] font-black tabular-nums w-8 text-right ${row.isMe ? "text-c-gold" : isTop6 ? "text-c-fg/80" : "text-[var(--c-muted)]"}`}>
+                {row.points}
+              </span>
+            </div>
           </div>
         );
       })}

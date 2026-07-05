@@ -270,7 +270,9 @@ export default function Home() {
         </button>
       </div>
 
-      {content}
+      <div key={screen} className="screen-enter">
+        {content}
+      </div>
     </div>
   );
 }
