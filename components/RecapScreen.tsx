@@ -201,7 +201,7 @@ export function RecapScreen({
               const tier = player.rating >= 90 ? 3 : player.rating >= 85 ? 2 : 1;
               const badgeBg = tier === 3 ? "#FFFFFF" : tier === 2 ? "#D4AF37" : "#0D0D0D";
               const badgeFg = tier === 2 ? "#000000" : "#D4AF37";
-              const badgeBorder = "none";
+              const badgeBorder = tier === 3 ? "2px solid #D4AF37" : "none";
               const lastName = player.name.split(" ").filter(Boolean).at(-1) ?? player.name;
 
               return (
