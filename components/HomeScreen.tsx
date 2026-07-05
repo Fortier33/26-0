@@ -38,7 +38,7 @@ export function HomeScreen({ myTeamName, onChangeTeamName, onStartDraft }: HomeS
                 type="text"
                 value={myTeamName}
                 onChange={(e) => onChangeTeamName(e.target.value)}
-                placeholder="Mon équipe"
+                placeholder="Mon XV"
                 className="w-full bg-transparent text-c-fg text-xl font-bold py-3 placeholder:text-[var(--c-faint)] focus:outline-none"
               />
             </div>

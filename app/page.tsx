@@ -37,7 +37,7 @@ export default function Home() {
     });
   }
 
-  const [myTeamName, setMyTeamName] = useState("Mon Équipe");
+  const [myTeamName, setMyTeamName] = useState("Mon XV");
   const [currentClub, setCurrentClub] = useState(() => {
     const keys = Object.keys(clubs);
     return keys[Math.floor(Math.random() * keys.length)];
