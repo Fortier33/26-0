@@ -17,7 +17,7 @@ export function HomeScreen({ myTeamName, onChangeTeamName, onStartDraft }: HomeS
           </p>
 
           <h1 className="text-[96px] sm:text-[140px] lg:text-[190px] font-black leading-none mb-4 lg:mb-6 select-none">
-            28<span className="text-c-gold mx-3 lg:mx-8">-</span>0
+            26<span className="text-c-gold mx-3 lg:mx-8">-</span>0
           </h1>
 
           <h2 className="text-2xl lg:text-[42px] font-black leading-tight mb-4 lg:mb-6 text-c-fg">

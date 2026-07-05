@@ -95,18 +95,18 @@ export function RecapScreen({
       });
       canvas.toBlob(async (blob) => {
         if (!blob) return;
-        const file = new File([blob], "mon-xv-28-0.png", { type: "image/png" });
+        const file = new File([blob], "mon-xv-26-0.png", { type: "image/png" });
         if (navigator.share && navigator.canShare({ files: [file] })) {
           await navigator.share({
             files: [file],
-            title: `Mon XV · ${myTeamName} · 28-0`,
-            text: `J'ai construit mon XV de légende sur 28-0 !`,
+            title: `Mon XV · ${myTeamName} · 26-0`,
+            text: `J'ai construit mon XV de légende sur 26-0 !`,
           }).catch(() => {});
         } else {
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
           a.href = url;
-          a.download = "mon-xv-28-0.png";
+          a.download = "mon-xv-26-0.png";
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
@@ -129,7 +129,7 @@ export function RecapScreen({
         {/* Brand bar */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 flex-shrink-0">
           <span className="font-black text-2xl tracking-tighter">
-            28<span className="text-c-gold">-</span>0
+            26<span className="text-c-gold">-</span>0
           </span>
           <span className="text-c-gold text-[8px] uppercase tracking-[0.45em] font-bold">
             Top 14 · 2025-26

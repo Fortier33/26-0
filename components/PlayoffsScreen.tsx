@@ -329,7 +329,7 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
       <header className={`border-b ${G.border} px-5 lg:px-8 py-4 lg:py-5 flex items-center justify-between flex-shrink-0`}>
         <div className="flex items-center gap-4">
           <span className="text-2xl lg:text-3xl font-black tracking-tighter">
-            28<span className="text-c-gold">-</span>0
+            26<span className="text-c-gold">-</span>0
           </span>
           <div className={`w-px h-7 ${G.divider}`} />
           <div>
