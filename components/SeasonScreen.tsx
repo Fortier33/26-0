@@ -47,8 +47,14 @@ export function SeasonScreen({
   const [currentMatchIsHome, setCurrentMatchIsHome] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
   const [mobileTab, setMobileTab] = useState<"match" | "classement">("match");
+  const [matchSpeed, setMatchSpeed] = useState<"normal" | "fast" | "ultra">("normal");
+  const [speedOpen, setSpeedOpen] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const currentMatchRef = useRef<MatchResult | null>(null);
+  const currentEntryRef = useRef<CalendarEntry | null>(null);
+  const minuteRef = useRef(0);
+  const doTickRef = useRef<() => void>(() => {});
+  const speedRef = useRef<"normal" | "fast" | "ultra">("normal");
 
   const played = seasonRevealed.length;
 
@@ -75,6 +81,20 @@ export function SeasonScreen({
 
   const myPosition = standings.findIndex(r => r.isMe) + 1;
 
+  function getIntervalMs(speed: "normal" | "fast" | "ultra") {
+    return speed === "normal" ? 150 : speed === "fast" ? 100 : 50;
+  }
+
+  function changeSpeed(speed: "normal" | "fast" | "ultra") {
+    speedRef.current = speed;
+    setMatchSpeed(speed);
+    setSpeedOpen(false);
+    if (intervalRef.current !== null) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = setInterval(() => doTickRef.current(), getIntervalMs(speed));
+    }
+  }
+
   function finishMatch(match: MatchResult, isHome: boolean) {
     setMatchMinute(80);
     setLiveMyScore(match.myScore);
@@ -89,6 +109,7 @@ export function SeasonScreen({
     const entry = calendar[currentMatchIndex];
     const match = simulateMatch(teamRating, entry, selectedPlayers, currentMatchIndex + 1);
     currentMatchRef.current = match;
+    currentEntryRef.current = entry;
     setCurrentOpponent(entry.opponent);
     setCurrentMatchIsHome(entry.isHome);
     setMatchMinute(0);
@@ -96,21 +117,27 @@ export function SeasonScreen({
     setLiveOpponentScore(0);
     setMatchEvents([]);
     setIsRunning(true);
-    let minute = 0;
-    intervalRef.current = setInterval(() => {
-      minute += 5;
+    minuteRef.current = 0;
+
+    doTickRef.current = () => {
+      minuteRef.current += 1;
+      const minute = minuteRef.current;
+      const m = currentMatchRef.current!;
+      const e = currentEntryRef.current!;
       setMatchMinute(minute);
-      const visible = match.events.filter((e) => e.minute <= minute);
-      setLiveMyScore(visible.filter((e) => e.team === "me").reduce((s, e) => s + e.points, 0));
-      setLiveOpponentScore(visible.filter((e) => e.team === "opponent").reduce((s, e) => s + e.points, 0));
+      const visible = m.events.filter((ev) => ev.minute <= minute);
+      setLiveMyScore(visible.filter((ev) => ev.team === "me").reduce((s, ev) => s + ev.points, 0));
+      setLiveOpponentScore(visible.filter((ev) => ev.team === "opponent").reduce((s, ev) => s + ev.points, 0));
       setMatchEvents(visible);
       if (minute >= 80) {
         clearInterval(intervalRef.current!);
         intervalRef.current = null;
         setIsRunning(false);
-        onMatchComplete(buildResultLine(match, entry.isHome));
+        onMatchComplete(buildResultLine(m, e.isHome));
       }
-    }, 500);
+    };
+
+    intervalRef.current = setInterval(() => doTickRef.current(), getIntervalMs(speedRef.current));
   }
 
   function skipCurrentMatch() {
@@ -173,11 +200,39 @@ export function SeasonScreen({
             <p className="text-c-fg font-black text-xs lg:text-sm uppercase tracking-wide">Saison régulière</p>
           </div>
         </div>
-        <div className="text-right">
-          <p className="text-[var(--c-muted)] uppercase tracking-wider text-[8px] mb-0.5">Journée</p>
-          <p className="text-c-gold font-black text-xl lg:text-2xl">
-            {currentMatchIndex} <span className="text-[var(--c-faint)] text-sm lg:text-base font-bold">/ {TOTAL_MATCHES}</span>
-          </p>
+        <div className="flex items-center gap-4">
+          {/* Speed dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setSpeedOpen((o) => !o)}
+              className="flex items-center gap-1.5 border border-[var(--c-border)] hover:border-c-gold/40 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.2em] text-[var(--c-muted)] hover:text-c-gold transition-colors"
+            >
+              {matchSpeed === "normal" ? "Normal" : matchSpeed === "fast" ? "Accéléré" : "Ultra"}
+              <span className="text-[7px] opacity-60">{speedOpen ? "▴" : "▾"}</span>
+            </button>
+            {speedOpen && (
+              <div className="absolute right-0 top-full mt-1 bg-c-surface border border-[var(--c-border)] z-20 min-w-[100px]">
+                {(["normal", "fast", "ultra"] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => changeSpeed(s)}
+                    className={`w-full px-3 py-2 text-[9px] font-black uppercase tracking-[0.2em] text-left transition-colors border-b border-[var(--c-border-lo)] last:border-0 ${
+                      matchSpeed === s ? "text-c-gold" : "text-[var(--c-muted)] hover:text-c-fg"
+                    }`}
+                  >
+                    {s === "normal" ? "Normal" : s === "fast" ? "Accéléré" : "Ultra"}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {/* Journée counter */}
+          <div className="text-right">
+            <p className="text-[var(--c-muted)] uppercase tracking-wider text-[8px] mb-0.5">Journée</p>
+            <p className="text-c-gold font-black text-xl lg:text-2xl">
+              {currentMatchIndex} <span className="text-[var(--c-faint)] text-sm lg:text-base font-bold">/ {TOTAL_MATCHES}</span>
+            </p>
+          </div>
         </div>
       </header>
 
