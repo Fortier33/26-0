@@ -45,6 +45,7 @@ export default function Home() {
   const [selectedPlayers, setSelectedPlayers] = useState<Player[]>([]);
   const [sameClubRerolls, setSameClubRerolls] = useState(3);
   const [sameSeasonRerolls, setSameSeasonRerolls] = useState(3);
+  const [shownClubs, setShownClubs] = useState<Set<string>>(new Set());
   const [awaitingNewClub, setAwaitingNewClub] = useState(true);
 
   const [calendar, setCalendar] = useState<CalendarEntry[]>([]);
@@ -76,18 +77,22 @@ export default function Home() {
   function handleRerollSameClub() {
     if (sameClubRerolls <= 0) return;
     const { club } = getClubAndSeason(currentClub);
-    const options = Object.keys(clubs).filter((k) => getClubAndSeason(k).club === club && k !== currentClub);
+    const nextShown = new Set([...shownClubs, currentClub]);
+    const options = Object.keys(clubs).filter((k) => getClubAndSeason(k).club === club && !nextShown.has(k));
     if (options.length === 0) return;
     setCurrentClub(options[Math.floor(Math.random() * options.length)]);
+    setShownClubs(nextShown);
     setSameClubRerolls((n) => n - 1);
   }
 
   function handleRerollSameSeason() {
     if (sameSeasonRerolls <= 0) return;
     const { season } = getClubAndSeason(currentClub);
-    const options = Object.keys(clubs).filter((k) => getClubAndSeason(k).season === season && k !== currentClub);
+    const nextShown = new Set([...shownClubs, currentClub]);
+    const options = Object.keys(clubs).filter((k) => getClubAndSeason(k).season === season && !nextShown.has(k));
     if (options.length === 0) return;
     setCurrentClub(options[Math.floor(Math.random() * options.length)]);
+    setShownClubs(nextShown);
     setSameSeasonRerolls((n) => n - 1);
   }
 
@@ -162,6 +167,7 @@ export default function Home() {
     setSelectedPlayers([]);
     setSameClubRerolls(3);
     setSameSeasonRerolls(3);
+    setShownClubs(new Set());
     setAwaitingNewClub(true);
     setCurrentClub(keys[Math.floor(Math.random() * keys.length)]);
     setCalendar([]);
