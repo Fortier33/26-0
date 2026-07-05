@@ -541,7 +541,7 @@ function StandingsTable({ standings, played }: { standings: StandingRow[]; playe
               {i + 1}
             </span>
             <span className={`flex-1 text-[11px] font-black truncate ${row.isMe ? "text-c-gold" : isTop6 ? "text-c-fg" : "text-[var(--c-muted)]"}`}>
-              {row.isMe ? `▶ ${row.name}` : row.name}
+              {row.isMe ? `▶ ${row.name}` : stripSeason(row.name)}
             </span>
             <span className="text-[var(--c-muted)] text-[10px] tabular-nums w-6 text-center">{row.won}</span>
             <span className="text-[var(--c-muted)] text-[10px] tabular-nums w-6 text-center">{row.drawn}</span>
