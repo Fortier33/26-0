@@ -38,7 +38,7 @@ const G = {
 };
 
 const CONFETTI_COLORS = ["#D4AF37", "#F5F0E8", "#ffffff", "#B8860B", "#FFE066", "#FFF8DC"];
-const TICK_MS = 100;
+const TICK_MS = 150;
 
 function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));

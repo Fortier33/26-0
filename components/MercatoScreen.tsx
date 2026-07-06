@@ -419,7 +419,7 @@ function RecruitPhase({ remainingPlayers, slotsNeeded, onDone }: {
     <div className="flex flex-col" style={{ minHeight: "100svh" }}>
       <PhaseHeader title="Recrute tes remplaçants" step="Acte II · Recrutement" />
       <InstructionBox lines={[
-        `Pour chaque départ, un club est tiré au sort. Choisis un joueur parmi ceux proposés.`,
+        `Pour chaque recrutement, un club est tiré au sort. Choisis un joueur parmi ceux proposés.`,
         "Tu as 3 relances disponibles par recrutement.",
       ]} />
 
