@@ -155,7 +155,7 @@ function ProgressPhase({
           const isSelected = selectedIndex === originalIndex;
           const boostedRating = Math.min(99, player.rating + 2);
           const displayRating = isSelected ? boostedRating : player.rating;
-          const alreadyMax = player.rating >= 99;
+          const alreadyMax = player.rating >= 98;
           const tier = displayRating >= 90 ? 3 : displayRating >= 85 ? 2 : 1;
           const badgeBg = tier === 3 ? "#FFFFFF" : tier === 2 ? "#D4AF37" : "#0D0D0D";
           const badgeFg = tier === 2 ? "#000000" : "#D4AF37";
