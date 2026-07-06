@@ -388,8 +388,10 @@ function MatchPanel({
                 <p className="text-[var(--c-muted)] text-[10px] uppercase tracking-wide mt-0.5">{leftLabel}</p>
               </div>
               <div className="px-4 lg:px-8 text-center flex-shrink-0">
-                <p className="text-c-gold font-black text-4xl lg:text-6xl tracking-tighter leading-none">
-                  {leftScore}<span className="text-[var(--c-faint)] mx-1.5 lg:mx-2">-</span>{rightScore}
+                <p className="font-black text-4xl lg:text-6xl tracking-tighter leading-none">
+                  <span className={leftScore >= rightScore ? "text-c-gold" : "text-c-fg"}>{leftScore}</span>
+                  <span className="text-[var(--c-faint)] mx-1.5 lg:mx-2">-</span>
+                  <span className={rightScore >= leftScore ? "text-c-gold" : "text-c-fg"}>{rightScore}</span>
                 </p>
                 <p className="text-c-gold/70 text-[10px] font-bold tracking-widest mt-1">
                   {isRunning ? `${matchMinute}'` : "80'"}

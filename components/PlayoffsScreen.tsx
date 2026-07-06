@@ -491,8 +491,10 @@ function PlayoffMatchOverlay({ myTeamName, opponent, isHome, minute, myScore, op
             <p className={`${G.textFaint} text-[9px] uppercase tracking-wide mt-0.5`}>Dom.</p>
           </div>
           <div className="text-center flex-shrink-0 px-3 lg:px-6">
-            <p className="text-c-gold font-black text-5xl lg:text-7xl tracking-tighter leading-none tabular-nums">
-              {leftScore}<span className="text-c-gold/30 mx-2 text-3xl lg:text-4xl">–</span>{rightScore}
+            <p className="font-black text-5xl lg:text-7xl tracking-tighter leading-none tabular-nums">
+              <span className={leftScore >= rightScore ? "text-c-gold" : "text-white"}>{leftScore}</span>
+              <span className="text-c-gold/30 mx-2 text-3xl lg:text-4xl">–</span>
+              <span className={rightScore >= leftScore ? "text-c-gold" : "text-white"}>{rightScore}</span>
             </p>
             {(minute > 0 || matchDone) && (
               <p className={`${G.textMuted} text-[10px] font-bold tracking-widest mt-1`}>{minuteLabel}</p>
