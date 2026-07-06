@@ -4985,23 +4985,23 @@ export const historicalClubs: Record<string, Player[]> = {
 };
 
 const currentSeasonStrengths: Record<string, number> = {
-  "Stade Toulousain 25-26":       88,
-  "Montpellier Hérault Rugby 25-26":         84,
-  "Stade Français Paris 25-26":   85,
-  "Section Paloise 25-26":        84,
-  "Racing 92 25-26":              84,
-  "Stade Rochelais 25-26":        87,
-  "ASM Clermont 25-26":           81,
-  "Union Bordeaux-Bègles 25-26":  85,
-  "RC Toulon 25-26":              83,
-  "Castres Olympique 25-26":      81,
-  "LOU Rugby 25-26":              82,
-  "Aviron Bayonnais 25-26":       81,
-  "USA Perpignan 25-26":          81,
-  "US Montauban 25-26":           79,
+  "Stade Toulousain 25-26":          92,
+  "Stade Rochelais 25-26":           90,
+  "Stade Français Paris 25-26":      87,
+  "Union Bordeaux-Bègles 25-26":     87,
+  "Racing 92 25-26":                 86,
+  "Montpellier Hérault Rugby 25-26": 86,
+  "Section Paloise 25-26":           85,
+  "RC Toulon 25-26":                 85,
+  "LOU Rugby 25-26":                 84,
+  "ASM Clermont 25-26":              84,
+  "Castres Olympique 25-26":         83,
+  "Aviron Bayonnais 25-26":          83,
+  "USA Perpignan 25-26":             83,
+  "US Montauban 25-26":              82,
 };
 
 export const teamStrengths: Record<string, number> = {
-  ...Object.fromEntries(Object.keys(historicalClubs).map((k) => [k, 80])),
+  ...Object.fromEntries(Object.keys(historicalClubs).map((k) => [k, 83])),
   ...currentSeasonStrengths,
 };
