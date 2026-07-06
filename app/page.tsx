@@ -10,7 +10,7 @@ import { MercatoScreen } from "@/components/MercatoScreen";
 import { BlackoutTransition } from "@/components/BlackoutTransition";
 import { clubs, buildCalendar } from "@/lib/data";
 import { generateLeagueResults } from "@/lib/simulation";
-import type { CalendarEntry, Player, PlayoffSummary, Screen } from "@/lib/types";
+import type { CalendarEntry, MatchEvent, Player, PlayoffSummary, Screen, SeasonRecord } from "@/lib/types";
 
 const TOTAL_MATCHES = 26;
 
@@ -58,6 +58,9 @@ export default function Home() {
   const [myFinalPosition, setMyFinalPosition] = useState(0);
   const [playoffSummary, setPlayoffSummary] = useState<PlayoffSummary | null>(null);
   const [transitioning, setTransitioning] = useState(false);
+  const [seasonNumber, setSeasonNumber] = useState(1);
+  const [seasonTries, setSeasonTries] = useState<Record<string, number>>({});
+  const [seasonHistory, setSeasonHistory] = useState<SeasonRecord[]>([]);
 
   const teamRating = useMemo(() => {
     if (selectedPlayers.length === 0) return 0;
@@ -124,13 +127,48 @@ export default function Home() {
     setScreen("season");
   }
 
-  function handleMatchComplete(resultLine: string) {
+  function handleMatchComplete(resultLine: string, events: MatchEvent[]) {
+    events
+      .filter((e) => e.team === "me" && e.text.startsWith("Essai de "))
+      .forEach((e) => {
+        const name = e.text.replace("Essai de ", "");
+        setSeasonTries((prev) => ({ ...prev, [name]: (prev[name] ?? 0) + 1 }));
+      });
     setSeasonRevealed((prev) => [...prev, resultLine]);
     setCurrentMatchIndex((prev) => {
       const next = prev + 1;
       if (next >= TOTAL_MATCHES) setRegularSeasonDone(true);
       return next;
     });
+  }
+
+  function buildSeasonRecord(
+    lines: string[],
+    tries: Record<string, number>,
+    finalPos: number,
+    sNum: number,
+    outcome: PlayoffSummary["outcome"],
+  ): SeasonRecord {
+    const wins = lines.filter((r) => r.startsWith("✦")).length;
+    const draws = lines.filter((r) => r.startsWith("◈")).length;
+    const losses = lines.filter((r) => r.startsWith("✕")).length;
+    let pointsScored = 0, pointsConceded = 0;
+    let biggestWinMargin = 0, biggestWinDetails = "";
+    let biggestLossMargin = 0, biggestLossDetails = "";
+    let streak = 0, longestWinStreak = 0;
+    for (const line of lines) {
+      const [, myS, oppS, opp] = line.split("|");
+      const my = parseInt(myS), opp2 = parseInt(oppS);
+      const oppName = opp.replace(/\s\d{2}-\d{2}$/, "");
+      pointsScored += my; pointsConceded += opp2;
+      if (my - opp2 > biggestWinMargin) { biggestWinMargin = my - opp2; biggestWinDetails = `${my}-${opp2} vs ${oppName}`; }
+      if (opp2 - my > biggestLossMargin) { biggestLossMargin = opp2 - my; biggestLossDetails = `${my}-${opp2} vs ${oppName}`; }
+      if (line.startsWith("✦")) { streak++; longestWinStreak = Math.max(longestWinStreak, streak); } else { streak = 0; }
+    }
+    const topTryScorer = Object.entries(tries).reduce<{ name: string; tries: number } | null>(
+      (best, [name, t]) => (!best || t > best.tries) ? { name, tries: t } : best, null
+    );
+    return { seasonNumber: sNum, finalPosition: finalPos, wins, draws, losses, leaguePoints: wins * 4 + draws * 2, pointsScored, pointsConceded, longestWinStreak, topTryScorer, biggestWinMargin, biggestWinDetails, biggestLossMargin, biggestLossDetails, playoffOutcome: outcome };
   }
 
   function handleGoToPlayoffs() {
@@ -150,6 +188,8 @@ export default function Home() {
     const pos = rows.findIndex((r) => r.name === myTeamName) + 1;
     setMyFinalPosition(pos);
     if (!top6.includes(myTeamName)) {
+      const record = buildSeasonRecord(seasonRevealed, seasonTries, pos, seasonNumber, "non-qualifié");
+      setSeasonHistory((prev) => [...prev, record]);
       setPlayoffSummary({ outcome: "non-qualifié", matches: [] });
       setScreen("recap");
     } else {
@@ -158,6 +198,8 @@ export default function Home() {
   }
 
   function handlePlayoffsComplete(summary: PlayoffSummary) {
+    const record = buildSeasonRecord(seasonRevealed, seasonTries, myFinalPosition, seasonNumber, summary.outcome);
+    setSeasonHistory((prev) => [...prev, record]);
     setPlayoffSummary(summary);
     setScreen("recap");
   }
@@ -171,6 +213,8 @@ export default function Home() {
     setQualifiedTeams([]);
     setMyFinalPosition(0);
     setPlayoffSummary(null);
+    setSeasonTries({});
+    setSeasonNumber((n) => n + 1);
     setScreen("mercato");
   }
 
@@ -203,6 +247,9 @@ export default function Home() {
     setQualifiedTeams([]);
     setMyFinalPosition(0);
     setPlayoffSummary(null);
+    setSeasonNumber(1);
+    setSeasonTries({});
+    setSeasonHistory([]);
   }
 
   let content: React.ReactNode;
@@ -264,6 +311,7 @@ export default function Home() {
         seasonPoints={seasonWins * 4 + seasonDraws * 2}
         myFinalPosition={myFinalPosition}
         playoffSummary={playoffSummary}
+        seasonHistory={seasonHistory}
         onReplay={handleReplay}
         onNextSeason={handleNextSeason}
       />

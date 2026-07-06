@@ -28,6 +28,24 @@ export type MatchResult = {
 
 export type Screen = "home" | "draft" | "season" | "playoffs" | "recap" | "mercato";
 
+export type SeasonRecord = {
+  seasonNumber: number;
+  finalPosition: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  leaguePoints: number;
+  pointsScored: number;
+  pointsConceded: number;
+  longestWinStreak: number;
+  topTryScorer: { name: string; tries: number } | null;
+  biggestWinMargin: number;
+  biggestWinDetails: string;
+  biggestLossMargin: number;
+  biggestLossDetails: string;
+  playoffOutcome: "champion" | "finaliste" | "eliminé" | "non-qualifié";
+};
+
 export type PlayoffMatchSummary = {
   round: string;
   opponent: string;
