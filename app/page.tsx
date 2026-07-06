@@ -110,6 +110,7 @@ export default function Home() {
 
   function handleSelectPlayer(player: Player) {
     if (selectedPlayers.length >= 15) return;
+    if (selectedPlayers.some((sp) => sp.name === player.name)) return;
     setSelectedPlayers((prev) => [...prev, { ...player, club: currentClub }]);
     setAwaitingNewClub(true);
   }
