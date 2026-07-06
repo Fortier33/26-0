@@ -118,6 +118,12 @@ export function RecapScreen({
 }: Props) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [isSharing, setIsSharing] = useState(false);
+  const [showScrollHint, setShowScrollHint] = useState(true);
+
+  function handleScroll(e: React.UIEvent<HTMLDivElement>) {
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop <= el.clientHeight + 20) setShowScrollHint(false);
+  }
 
   const sortedSlots = sortByPosition(selectedPlayers);
 
@@ -177,8 +183,9 @@ export function RecapScreen({
       className="bg-c-bg text-c-fg flex flex-col"
       style={{ height: "100svh" }}
     >
-      {/* Scrollable area (contains shareable card + records) */}
-      <div ref={cardRef} className="flex-1 min-h-0 overflow-y-auto flex flex-col bg-c-bg">
+      {/* Scrollable area wrapper — holds the scroll hint gradient */}
+      <div className="flex-1 min-h-0 relative">
+      <div ref={cardRef} className="absolute inset-0 overflow-y-auto flex flex-col bg-c-bg" onScroll={handleScroll}>
 
         {/* Brand bar */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 flex-shrink-0">
@@ -245,53 +252,7 @@ export function RecapScreen({
           )}
         </div>
 
-        {/* XV grid */}
-        <div className="flex-shrink-0 px-5 py-3">
-          <p className="text-[var(--c-faint)] uppercase tracking-[0.4em] text-[7px] font-bold mb-2">
-            Mon XV
-          </p>
-          <div className="grid grid-cols-2 gap-x-4">
-            {sortedSlots.map(({ player, jersey }) => {
-              const tier = player.rating >= 90 ? 3 : player.rating >= 85 ? 2 : 1;
-              const badgeBg = tier === 3 ? "#FFFFFF" : tier === 2 ? "#D4AF37" : "#0D0D0D";
-              const badgeFg = tier === 2 ? "#000000" : "#D4AF37";
-              const badgeBorder = tier === 3 ? "2px solid #D4AF37" : "none";
-              const lastName = player.name.split(" ").filter(Boolean).at(-1) ?? player.name;
-
-              return (
-                <div
-                  key={jersey}
-                  className="flex items-center gap-2 py-[7px] border-b border-[var(--c-border-lo)]"
-                >
-                  <span className="text-[var(--c-faint)] text-[8px] font-black w-4 text-right tabular-nums shrink-0">
-                    {jersey}
-                  </span>
-                  <span className="flex-1 font-black text-[11px] truncate uppercase tracking-wide text-c-fg min-w-0 leading-normal">
-                    {lastName}
-                  </span>
-                  <span
-                    style={{
-                      background: badgeBg,
-                      color: badgeFg,
-                      border: badgeBorder,
-                      padding: "1px 5px",
-                      fontSize: 8,
-                      fontWeight: 900,
-                      lineHeight: "14px",
-                      minWidth: 24,
-                      textAlign: "center",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {player.rating}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Records section */}
+        {/* Records section — above XV so visible without scrolling */}
         {recordRows.length > 0 && (
           <div className="flex-shrink-0 px-5 pb-4 pt-3 border-t border-[var(--c-border-lo)]">
             <div className="flex items-center gap-3 mb-3">
@@ -340,7 +301,64 @@ export function RecapScreen({
           </div>
         )}
 
-      </div>
+        {/* XV grid */}
+        <div className="flex-shrink-0 px-5 py-3">
+          <p className="text-[var(--c-faint)] uppercase tracking-[0.4em] text-[7px] font-bold mb-2">
+            Mon XV
+          </p>
+          <div className="grid grid-cols-2 gap-x-4">
+            {sortedSlots.map(({ player, jersey }) => {
+              const tier = player.rating >= 90 ? 3 : player.rating >= 85 ? 2 : 1;
+              const badgeBg = tier === 3 ? "#FFFFFF" : tier === 2 ? "#D4AF37" : "#0D0D0D";
+              const badgeFg = tier === 2 ? "#000000" : "#D4AF37";
+              const badgeBorder = tier === 3 ? "2px solid #D4AF37" : "none";
+              const lastName = player.name.split(" ").filter(Boolean).at(-1) ?? player.name;
+
+              return (
+                <div
+                  key={jersey}
+                  className="flex items-center gap-2 py-[7px] border-b border-[var(--c-border-lo)]"
+                >
+                  <span className="text-[var(--c-faint)] text-[8px] font-black w-4 text-right tabular-nums shrink-0">
+                    {jersey}
+                  </span>
+                  <span className="flex-1 font-black text-[11px] truncate uppercase tracking-wide text-c-fg min-w-0 leading-normal">
+                    {lastName}
+                  </span>
+                  <span
+                    style={{
+                      background: badgeBg,
+                      color: badgeFg,
+                      border: badgeBorder,
+                      padding: "1px 5px",
+                      fontSize: 8,
+                      fontWeight: 900,
+                      lineHeight: "14px",
+                      minWidth: 24,
+                      textAlign: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {player.rating}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+      </div>{/* closes cardRef */}
+
+      {/* Scroll hint — fades out once user has scrolled */}
+      {showScrollHint && (
+        <div
+          className="absolute bottom-0 left-0 right-0 pointer-events-none flex flex-col items-center justify-end pb-2"
+          style={{ height: 56, background: "linear-gradient(to bottom, transparent, var(--c-bg))" }}
+        >
+          <span className="text-c-gold/60 text-[10px] animate-bounce">↓</span>
+        </div>
+      )}
+      </div>{/* closes wrapper */}
 
       {/* Action buttons — outside shareable area, pinned at bottom */}
       <div className="flex-shrink-0 px-5 pb-6 pt-3 space-y-2 border-t border-[var(--c-border-lo)]">
