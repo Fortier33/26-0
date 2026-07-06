@@ -37,31 +37,34 @@ interface Props {
 }
 
 export function MercatoScreen({ selectedPlayers, onComplete }: Props) {
-  const [phase, setPhase] = useState<"release" | "recruit">("release");
+  const [phase, setPhase] = useState<"progress" | "release" | "recruit">("progress");
+  const [progressedPlayers, setProgressedPlayers] = useState<Player[]>(selectedPlayers);
   const [releasedIndices, setReleasedIndices] = useState<Set<number>>(new Set());
 
-  const remainingPlayers = selectedPlayers.filter((_, i) => !releasedIndices.has(i));
+  const remainingPlayers = progressedPlayers.filter((_, i) => !releasedIndices.has(i));
   const slotsNeeded = releasedIndices.size;
+
+  function handleProgressConfirm(boosted: Player[]) {
+    setProgressedPlayers(boosted);
+    setPhase("release");
+  }
 
   function toggleRelease(i: number) {
     setReleasedIndices((prev) => {
       const next = new Set(prev);
-      if (next.has(i)) {
-        next.delete(i);
-      } else if (next.size < 3) {
-        next.add(i);
-      }
+      if (next.has(i)) { next.delete(i); } else if (next.size < 3) { next.add(i); }
       return next;
     });
   }
 
   function confirmReleases() {
-    if (slotsNeeded === 0) {
-      onComplete(selectedPlayers);
-      return;
-    }
+    if (slotsNeeded === 0) { onComplete(progressedPlayers); return; }
     setPhase("recruit");
   }
+
+  const headerTitle = phase === "progress" ? "Fais progresser un joueur"
+    : phase === "release" ? "Libère tes joueurs"
+    : "Recrute tes remplaçants";
 
   return (
     <main className="min-h-screen bg-c-bg text-c-fg flex flex-col overflow-hidden">
@@ -72,27 +75,38 @@ export function MercatoScreen({ selectedPlayers, onComplete }: Props) {
           </span>
           <div className="w-px h-7 bg-[var(--c-border)]" />
           <div>
-            <p className="text-c-gold uppercase tracking-[0.35em] text-[8px] font-bold">Mercato</p>
+            <p className="text-c-gold uppercase tracking-[0.35em] text-[8px] font-bold">
+              {phase === "progress" ? "Progression" : "Mercato"}
+            </p>
             <p className="text-c-fg font-black text-xs uppercase tracking-wide">
-              {phase === "release" ? "Libère tes joueurs" : "Recrute tes remplaçants"}
+              {headerTitle}
             </p>
           </div>
         </div>
         <div className="text-right">
-          <p className="text-[var(--c-muted)] uppercase tracking-wider text-[8px] mb-0.5">
-            {phase === "release" ? "Départs" : "Recrues"}
-          </p>
-          <p className="text-c-gold font-black text-xl">
-            {phase === "release" ? releasedIndices.size : 0}
-            <span className="text-[var(--c-faint)] text-sm font-bold"> / 3</span>
-          </p>
+          {phase === "progress" ? (
+            <p className="text-[var(--c-muted)] uppercase tracking-wider text-[8px]">+2 disponible</p>
+          ) : phase === "release" ? (
+            <>
+              <p className="text-[var(--c-muted)] uppercase tracking-wider text-[8px] mb-0.5">Départs</p>
+              <p className="text-c-gold font-black text-xl">
+                {releasedIndices.size}
+                <span className="text-[var(--c-faint)] text-sm font-bold"> / 3</span>
+              </p>
+            </>
+          ) : null}
         </div>
       </header>
 
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-        {phase === "release" ? (
+        {phase === "progress" ? (
+          <ProgressPhase
+            players={selectedPlayers}
+            onConfirm={handleProgressConfirm}
+          />
+        ) : phase === "release" ? (
           <ReleasePhase
-            selectedPlayers={selectedPlayers}
+            selectedPlayers={progressedPlayers}
             releasedIndices={releasedIndices}
             onToggle={toggleRelease}
             onConfirm={confirmReleases}
@@ -106,6 +120,94 @@ export function MercatoScreen({ selectedPlayers, onComplete }: Props) {
         )}
       </div>
     </main>
+  );
+}
+
+/* ── Phase 0 : Progression ───────────────────────────────────── */
+
+function ProgressPhase({
+  players,
+  onConfirm,
+}: {
+  players: Player[];
+  onConfirm: (players: Player[]) => void;
+}) {
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+
+  const sorted = [...players]
+    .map((p, i) => ({ player: p, originalIndex: i }))
+    .sort((a, b) => POSITION_ORDER.indexOf(a.player.position) - POSITION_ORDER.indexOf(b.player.position));
+
+  function handleConfirm() {
+    if (selectedIndex === null) { onConfirm(players); return; }
+    onConfirm(players.map((p, i) => i === selectedIndex ? { ...p, rating: Math.min(99, p.rating + 2) } : p));
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="px-5 py-3 border-b border-[var(--c-border-lo)] flex-shrink-0">
+        <p className="text-[var(--c-muted)] text-[11px]">
+          Choisis un joueur pour lui accorder <span className="text-c-gold font-bold">+2 de note</span> · max 99
+        </p>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {sorted.map(({ player, originalIndex }) => {
+          const isSelected = selectedIndex === originalIndex;
+          const boostedRating = Math.min(99, player.rating + 2);
+          const displayRating = isSelected ? boostedRating : player.rating;
+          const alreadyMax = player.rating >= 99;
+          const tier = displayRating >= 90 ? 3 : displayRating >= 85 ? 2 : 1;
+          const badgeBg = tier === 3 ? "#FFFFFF" : tier === 2 ? "#D4AF37" : "#0D0D0D";
+          const badgeFg = tier === 2 ? "#000000" : "#D4AF37";
+          const badgeBorder = tier === 3 ? "2px solid #D4AF37" : "none";
+
+          return (
+            <button
+              key={originalIndex}
+              onClick={() => !alreadyMax && setSelectedIndex(isSelected ? null : originalIndex)}
+              disabled={alreadyMax}
+              className={`w-full flex items-center gap-3 px-5 py-3 border-b border-[var(--c-border-lo)] transition-all text-left ${
+                isSelected
+                  ? "bg-c-gold/10"
+                  : alreadyMax
+                  ? "opacity-30 cursor-not-allowed"
+                  : "hover:bg-[var(--c-ghost)]"
+              }`}
+            >
+              <div className="w-5 h-5 border border-[var(--c-border)] flex items-center justify-center flex-shrink-0"
+                style={isSelected ? { borderColor: "#D4AF37" } : undefined}>
+                {isSelected && <span className="text-c-gold text-xs font-black">↑</span>}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className={`font-black text-xs uppercase tracking-wide truncate ${isSelected ? "text-c-gold" : "text-c-fg"}`}>
+                  {abbreviateName(player.name)}
+                </p>
+                <p className="text-[9px] uppercase tracking-wider text-[var(--c-muted)] mt-0.5">
+                  {player.position}
+                  {player.club && <span className="ml-1 opacity-60">· {player.club.replace(/\s\d{2}-\d{2}$/, "")}</span>}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {isSelected && (
+                  <span className="text-c-gold text-[9px] font-black tracking-wider">+2</span>
+                )}
+                <span style={{ background: badgeBg, color: badgeFg, border: badgeBorder, padding: "1px 6px", fontSize: 10, fontWeight: 900, lineHeight: "16px", transition: "all 0.2s" }}>
+                  {displayRating}
+                </span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex-shrink-0 px-5 py-4 border-t border-[var(--c-border-lo)]">
+        <button
+          onClick={handleConfirm}
+          className="w-full bg-c-gold hover:bg-[#F5F0E8] text-black font-black uppercase tracking-[0.2em] text-sm py-4 transition-colors"
+        >
+          {selectedIndex === null ? "Passer →" : "Confirmer la progression →"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -254,7 +356,6 @@ function RecruitPhase({
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Recruited so far */}
       {recruited.length > 0 && (
         <div className="flex-shrink-0 px-5 py-2 border-b border-[var(--c-border-lo)] flex gap-2 flex-wrap">
           {recruited.map((p, i) => (
