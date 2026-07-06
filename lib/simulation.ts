@@ -97,20 +97,50 @@ export function simulatePlayoffMatch(
   return { homeScore, awayScore, winner: homeScore > awayScore ? homeTeam : awayTeam };
 }
 
+function assignMatchPoints(
+  homeTeam: string,
+  awayTeam: string,
+  results: Record<string, number[]>,
+) {
+  const homeStr = getTeamStrength(homeTeam) + HOME_BONUS;
+  const awayStr = getTeamStrength(awayTeam);
+  const homeWinProb = (homeStr ** 2) / (homeStr ** 2 + awayStr ** 2);
+  const DRAW_PROB = 0.02;
+  const r = Math.random();
+  if (r < DRAW_PROB) {
+    results[homeTeam].push(2);
+    results[awayTeam].push(2);
+  } else if (r - DRAW_PROB < homeWinProb * (1 - DRAW_PROB)) {
+    results[homeTeam].push(4);
+    results[awayTeam].push(0);
+  } else {
+    results[homeTeam].push(0);
+    results[awayTeam].push(4);
+  }
+}
+
 export function generateLeagueResults(opponents: string[]): Record<string, number[]> {
   const results: Record<string, number[]> = {};
+  for (const team of opponents) results[team] = [];
+
+  // Full round-robin: each pair plays twice (home and away), like Top 14
+  for (let i = 0; i < opponents.length; i++) {
+    for (let j = i + 1; j < opponents.length; j++) {
+      assignMatchPoints(opponents[i], opponents[j], results);
+      assignMatchPoints(opponents[j], opponents[i], results);
+    }
+  }
+
+  // 2 matches vs the player's team (1 home, 1 away — approximated)
   for (const team of opponents) {
     const strength = getTeamStrength(team);
-    // ~60% win rate for top teams (strength ~90), ~35% for bottom (strength ~80)
     const winProb = Math.min(0.72, 0.28 + (strength - 70) / 28 * 0.44);
-    const drawProb = 0.02;
-    results[team] = Array.from({ length: 26 }, () => {
+    for (let k = 0; k < 2; k++) {
       const r = Math.random();
-      if (r < winProb) return 4;
-      if (r < winProb + drawProb) return 2;
-      return 0;
-    });
+      results[team].push(r < winProb ? 4 : r < winProb + 0.02 ? 2 : 0);
+    }
   }
+
   return results;
 }
 
