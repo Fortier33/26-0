@@ -4,6 +4,19 @@ import { useEffect, useRef, useState } from "react";
 import { clubs, MAX_BY_POSITION } from "@/lib/data";
 import type { Player } from "@/lib/types";
 
+/* ── Steel-blue palette ───────────────────────────────────────────
+   All mercato UI uses these so it stays cold regardless of theme.  */
+const S = {
+  bg:       "#04060F",
+  bgCard:   "#060A14",
+  text:     "#E8EDF5",
+  muted:    "rgba(143,175,200,0.65)",
+  faint:    "rgba(143,175,200,0.30)",
+  accent:   "#8FAFC8",
+  border:   "rgba(143,175,200,0.15)",
+  borderHi: "rgba(143,175,200,0.45)",
+};
+
 const SPIN_POOL = [...new Set(
   Object.keys(clubs).map((n) => n.replace(/\s\d{2}-\d{2}$/, ""))
 )];
@@ -13,14 +26,11 @@ function getClubAndSeason(key: string) {
   const club = key.slice(0, key.length - season.length - 1);
   return { club, season };
 }
-
-function abbreviateName(fullName: string): string {
-  const parts = fullName.trim().split(/\s+/);
-  if (parts.length < 2) return fullName;
-  return `${parts[0][0]}.${parts.slice(1).join(" ")}`;
+function abbreviateName(name: string) {
+  const p = name.trim().split(/\s+/);
+  return p.length < 2 ? name : `${p[0][0]}.${p.slice(1).join(" ")}`;
 }
-
-function randomKey(exclude: Set<string> = new Set()): string {
+function randomKey(exclude: Set<string> = new Set()) {
   const keys = Object.keys(clubs).filter((k) => !exclude.has(k));
   return keys[Math.floor(Math.random() * keys.length)];
 }
@@ -37,17 +47,15 @@ interface Props {
 }
 
 export function MercatoScreen({ selectedPlayers, onComplete }: Props) {
-  const [phase, setPhase] = useState<"progress" | "release" | "recruit">("progress");
-  const [progressedPlayers, setProgressedPlayers] = useState<Player[]>(selectedPlayers);
+  const [phase, setPhase] = useState<"release" | "recruit" | "progress">("release");
+  const [actOverlay, setActOverlay] = useState<{ text: string; act: number } | null>(
+    { text: "DÉPARTS", act: 1 }
+  );
   const [releasedIndices, setReleasedIndices] = useState<Set<number>>(new Set());
+  const [squadForProgress, setSquadForProgress] = useState<Player[]>(selectedPlayers);
 
-  const remainingPlayers = progressedPlayers.filter((_, i) => !releasedIndices.has(i));
+  const remainingPlayers = selectedPlayers.filter((_, i) => !releasedIndices.has(i));
   const slotsNeeded = releasedIndices.size;
-
-  function handleProgressConfirm(boosted: Player[]) {
-    setProgressedPlayers(boosted);
-    setPhase("release");
-  }
 
   function toggleRelease(i: number) {
     setReleasedIndices((prev) => {
@@ -57,65 +65,52 @@ export function MercatoScreen({ selectedPlayers, onComplete }: Props) {
     });
   }
 
-  function confirmReleases() {
-    if (slotsNeeded === 0) { onComplete(progressedPlayers); return; }
-    setPhase("recruit");
+  function handleConfirmReleases() {
+    if (slotsNeeded === 0) {
+      setSquadForProgress(selectedPlayers);
+      setPhase("progress");
+      setActOverlay({ text: "PRÉ-SAISON", act: 3 });
+    } else {
+      setPhase("recruit");
+      setActOverlay({ text: "RECRUTEMENT", act: 2 });
+    }
   }
 
-  const headerTitle = phase === "progress" ? "Fais progresser un joueur"
-    : phase === "release" ? "Libère tes joueurs"
-    : "Recrute tes remplaçants";
+  function handleRecruitDone(players: Player[]) {
+    setSquadForProgress(players);
+    setPhase("progress");
+    setActOverlay({ text: "PRÉ-SAISON", act: 3 });
+  }
 
   return (
-    <main className="min-h-screen bg-c-bg text-c-fg flex flex-col overflow-hidden">
-      <header className="border-b border-[var(--c-border)] px-5 lg:px-8 py-4 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-4">
-          <span className="text-2xl font-black tracking-tighter">
-            26<span className="text-c-gold">-</span>0
-          </span>
-          <div className="w-px h-7 bg-[var(--c-border)]" />
-          <div>
-            <p className="text-c-gold uppercase tracking-[0.35em] text-[8px] font-bold">
-              {phase === "progress" ? "Progression" : "Mercato"}
-            </p>
-            <p className="text-c-fg font-black text-xs uppercase tracking-wide">
-              {headerTitle}
-            </p>
-          </div>
-        </div>
-        <div className="text-right">
-          {phase === "progress" ? (
-            <p className="text-[var(--c-muted)] uppercase tracking-wider text-[8px]">+2 disponible</p>
-          ) : phase === "release" ? (
-            <>
-              <p className="text-[var(--c-muted)] uppercase tracking-wider text-[8px] mb-0.5">Départs</p>
-              <p className="text-c-gold font-black text-xl">
-                {releasedIndices.size}
-                <span className="text-[var(--c-faint)] text-sm font-bold"> / 3</span>
-              </p>
-            </>
-          ) : null}
-        </div>
-      </header>
+    <main style={{ minHeight: "100svh", background: S.bg, color: S.text }} className="flex flex-col overflow-hidden">
 
-      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-        {phase === "progress" ? (
-          <ProgressPhase
-            players={selectedPlayers}
-            onConfirm={handleProgressConfirm}
-          />
-        ) : phase === "release" ? (
+      {/* Cinematic act title overlay */}
+      {actOverlay && (
+        <ActTitle act={actOverlay.act} text={actOverlay.text} onDone={() => setActOverlay(null)} />
+      )}
+
+      {/* Phase content rendered behind the overlay */}
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        {phase === "release" && (
           <ReleasePhase
-            selectedPlayers={progressedPlayers}
+            players={selectedPlayers}
             releasedIndices={releasedIndices}
             onToggle={toggleRelease}
-            onConfirm={confirmReleases}
+            onConfirm={handleConfirmReleases}
           />
-        ) : (
+        )}
+        {phase === "recruit" && (
           <RecruitPhase
             remainingPlayers={remainingPlayers}
             slotsNeeded={slotsNeeded}
-            onComplete={onComplete}
+            onDone={handleRecruitDone}
+          />
+        )}
+        {phase === "progress" && (
+          <ProgressPhase
+            players={squadForProgress}
+            onConfirm={onComplete}
           />
         )}
       </div>
@@ -123,176 +118,252 @@ export function MercatoScreen({ selectedPlayers, onComplete }: Props) {
   );
 }
 
-/* ── Phase 0 : Progression ───────────────────────────────────── */
+/* ── Cinematic act title ─────────────────────────────────────────── */
 
-function ProgressPhase({
-  players,
-  onConfirm,
-}: {
-  players: Player[];
-  onConfirm: (players: Player[]) => void;
-}) {
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+function ActTitle({ act, text, onDone }: { act: number; text: string; onDone: () => void }) {
+  const chars = text.split("");
+  const [visibleCount, setVisibleCount] = useState(0);
+  const [punchIdx, setPunchIdx]         = useState(-1);
+  const [pulse, setPulse]               = useState(false);
+  const [showLabel, setShowLabel]       = useState(false);
+  const [fadeOut, setFadeOut]           = useState(false);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
 
-  const sorted = [...players]
-    .map((p, i) => ({ player: p, originalIndex: i }))
-    .sort((a, b) => POSITION_ORDER.indexOf(a.player.position) - POSITION_ORDER.indexOf(b.player.position));
+  useEffect(() => {
+    const at = (fn: () => void, ms: number) => {
+      const t = setTimeout(fn, ms); timers.current.push(t);
+    };
 
-  function handleConfirm() {
-    if (selectedIndex === null) { onConfirm(players); return; }
-    onConfirm(players.map((p, i) => i === selectedIndex ? { ...p, rating: Math.min(99, p.rating + 2) } : p));
-  }
+    at(() => setShowLabel(true), 180);
+
+    chars.forEach((_, i) => {
+      at(() => { setVisibleCount(i + 1); setPunchIdx(i); }, 480 + i * 95);
+      at(() => setPunchIdx(-1), 480 + i * 95 + 175);
+    });
+    const lastLetter = 480 + (chars.length - 1) * 95;
+
+    at(() => setPulse(true),   lastLetter + 220);
+    at(() => setPulse(false),  lastLetter + 460);
+    at(() => setFadeOut(true), lastLetter + 560);
+    at(() => onDoneRef.current(), lastLetter + 1050);
+
+    return () => { timers.current.forEach(clearTimeout); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="px-5 py-3 border-b border-[var(--c-border-lo)] flex-shrink-0">
-        <p className="text-[var(--c-muted)] text-[11px]">
-          Choisis un joueur pour lui accorder <span className="text-c-gold font-bold">+2 de note</span> · max 99
-        </p>
-      </div>
-      <div className="flex-1 overflow-y-auto">
-        {sorted.map(({ player, originalIndex }) => {
-          const isSelected = selectedIndex === originalIndex;
-          const boostedRating = Math.min(99, player.rating + 2);
-          const displayRating = isSelected ? boostedRating : player.rating;
-          const alreadyMax = player.rating >= 98;
-          const tier = displayRating >= 90 ? 3 : displayRating >= 85 ? 2 : 1;
-          const badgeBg = tier === 3 ? "#FFFFFF" : tier === 2 ? "#D4AF37" : "#0D0D0D";
-          const badgeFg = tier === 2 ? "#000000" : "#D4AF37";
-          const badgeBorder = tier === 3 ? "2px solid #D4AF37" : "none";
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 200,
+      background: S.bg,
+      opacity: fadeOut ? 0 : 1,
+      transition: fadeOut ? "opacity 0.5s ease" : "none",
+      pointerEvents: fadeOut ? "none" : "all",
+      display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center", gap: 20,
+    }}>
+      {/* Act number label */}
+      <p style={{
+        color: S.muted,
+        fontSize: 10, fontWeight: 700,
+        letterSpacing: "0.55em",
+        textTransform: "uppercase",
+        opacity: showLabel ? 1 : 0,
+        transition: "opacity 0.4s ease",
+      }}>
+        ACTE {act}
+      </p>
 
-          return (
-            <button
-              key={originalIndex}
-              onClick={() => !alreadyMax && setSelectedIndex(isSelected ? null : originalIndex)}
-              disabled={alreadyMax}
-              className={`w-full flex items-center gap-3 px-5 py-3 border-b border-[var(--c-border-lo)] transition-all text-left ${
-                isSelected
-                  ? "bg-c-gold/10"
-                  : alreadyMax
-                  ? "opacity-30 cursor-not-allowed"
-                  : "hover:bg-[var(--c-ghost)]"
-              }`}
-            >
-              <div className="w-5 h-5 border border-[var(--c-border)] flex items-center justify-center flex-shrink-0"
-                style={isSelected ? { borderColor: "#D4AF37" } : undefined}>
-                {isSelected && <span className="text-c-gold text-xs font-black">↑</span>}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className={`font-black text-xs uppercase tracking-wide truncate ${isSelected ? "text-c-gold" : "text-c-fg"}`}>
-                  {abbreviateName(player.name)}
-                </p>
-                <p className="text-[9px] uppercase tracking-wider text-[var(--c-muted)] mt-0.5">
-                  {player.position}
-                  {player.club && <span className="ml-1 opacity-60">· {player.club.replace(/\s\d{2}-\d{2}$/, "")}</span>}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {isSelected && (
-                  <span className="text-c-gold text-[9px] font-black tracking-wider">+2</span>
-                )}
-                <span style={{ background: badgeBg, color: badgeFg, border: badgeBorder, padding: "1px 6px", fontSize: 10, fontWeight: 900, lineHeight: "16px", transition: "all 0.2s" }}>
-                  {displayRating}
-                </span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-      <div className="flex-shrink-0 px-5 py-4 border-t border-[var(--c-border-lo)]">
-        <button
-          onClick={handleConfirm}
-          className="w-full bg-c-gold hover:bg-[#F5F0E8] text-black font-black uppercase tracking-[0.2em] text-sm py-4 transition-colors"
-        >
-          {selectedIndex === null ? "Passer →" : "Confirmer la progression →"}
-        </button>
+      {/* Main title letters */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 4,
+        transform: pulse ? "scale(1.07)" : "scale(1)",
+        filter: pulse
+          ? `drop-shadow(0 0 28px rgba(143,175,200,0.9)) drop-shadow(0 0 60px rgba(143,175,200,0.35))`
+          : "none",
+        transition: "transform 0.15s ease, filter 0.15s ease",
+      }}>
+        {chars.map((char, i) => (
+          <span key={i} style={{
+            display: "inline-block",
+            fontSize: "clamp(36px, 8vw, 72px)",
+            fontWeight: 900,
+            lineHeight: 1,
+            textTransform: "uppercase",
+            color: char === "-" ? "rgba(143,175,200,0.4)" : S.accent,
+            opacity: visibleCount > i ? 1 : 0,
+            transform: punchIdx === i ? "scale(1.55) translateY(-5px)" : "scale(1) translateY(0)",
+            transition: "transform 0.2s cubic-bezier(0.34,1.56,0.64,1), opacity 0.01s",
+            textShadow: visibleCount > i
+              ? "0 0 20px rgba(143,175,200,0.7), 0 0 50px rgba(143,175,200,0.25)"
+              : "none",
+          }}>
+            {char}
+          </span>
+        ))}
       </div>
     </div>
   );
 }
 
-/* ── Phase 1 : Release ───────────────────────────────────────── */
+/* ── Shared components ───────────────────────────────────────────── */
 
-function ReleasePhase({
-  selectedPlayers, releasedIndices, onToggle, onConfirm,
-}: {
-  selectedPlayers: Player[];
+function PhaseHeader({ title, step }: { title: string; step: string }) {
+  return (
+    <header style={{ borderBottom: `1px solid ${S.border}` }} className="px-5 lg:px-8 py-4 flex items-center justify-between flex-shrink-0">
+      <div className="flex items-center gap-4">
+        <span className="font-black text-2xl tracking-tighter" style={{ color: S.text }}>
+          26<span style={{ color: S.accent }}>-</span>0
+        </span>
+        <div style={{ width: 1, height: 28, background: S.border }} />
+        <div>
+          <p style={{ color: S.accent, fontSize: 8, fontWeight: 700, letterSpacing: "0.35em", textTransform: "uppercase" }}>{step}</p>
+          <p style={{ color: S.text, fontSize: 11, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.08em" }}>{title}</p>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function InstructionBox({ lines }: { lines: string[] }) {
+  return (
+    <div style={{
+      background: S.bgCard,
+      border: `1px solid ${S.border}`,
+      borderLeft: `3px solid ${S.accent}`,
+      margin: "12px 20px",
+      padding: "10px 14px",
+      flexShrink: 0,
+    }}>
+      <p style={{ color: S.accent, fontSize: 8, fontWeight: 700, letterSpacing: "0.3em", textTransform: "uppercase", marginBottom: 6 }}>
+        Comment jouer
+      </p>
+      {lines.map((line, i) => (
+        <p key={i} style={{ color: S.text, fontSize: 11, lineHeight: 1.65, opacity: i > 0 ? 0.7 : 1 }}>
+          {line}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function PrimaryButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{ background: S.accent, color: S.bg }}
+      className="w-full font-black uppercase tracking-[0.2em] text-sm py-4 transition-opacity hover:opacity-85"
+    >
+      {children}
+    </button>
+  );
+}
+
+function PlayerBadge({ rating }: { rating: number }) {
+  const tier = rating >= 90 ? 3 : rating >= 85 ? 2 : 1;
+  const bg = tier === 3 ? "#FFFFFF" : tier === 2 ? "#D4AF37" : "#0D0D0D";
+  const fg = tier === 2 ? "#000000" : "#D4AF37";
+  const border = tier === 3 ? "2px solid #D4AF37" : "none";
+  return (
+    <span style={{ background: bg, color: fg, border, padding: "1px 6px", fontSize: 10, fontWeight: 900, lineHeight: "16px", flexShrink: 0 }}>
+      {rating}
+    </span>
+  );
+}
+
+/* ── Phase 1 : Départs ───────────────────────────────────────────── */
+
+function ReleasePhase({ players, releasedIndices, onToggle, onConfirm }: {
+  players: Player[];
   releasedIndices: Set<number>;
   onToggle: (i: number) => void;
   onConfirm: () => void;
 }) {
-  const sorted = [...selectedPlayers]
+  const sorted = [...players]
     .map((p, i) => ({ player: p, originalIndex: i }))
     .sort((a, b) => POSITION_ORDER.indexOf(a.player.position) - POSITION_ORDER.indexOf(b.player.position));
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="px-5 py-3 border-b border-[var(--c-border-lo)] flex-shrink-0">
-        <p className="text-[var(--c-muted)] text-[11px]">
-          Clique sur un joueur pour le libérer · <span className="text-c-gold">max 3</span>
-        </p>
-      </div>
+    <div className="flex flex-col h-full" style={{ minHeight: "100svh" }}>
+      <PhaseHeader title="Libère tes joueurs" step="Acte I · Départs" />
+      <InstructionBox lines={[
+        "Sélectionne jusqu'à 3 joueurs à libérer. Ces joueurs quittent définitivement le club.",
+        "Appuie sur Continuer si tu souhaites garder tout ton effectif.",
+      ]} />
+
+      {releasedIndices.size > 0 && (
+        <div style={{ borderBottom: `1px solid ${S.border}`, padding: "6px 20px", flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ color: S.accent, fontSize: 8, fontWeight: 700, letterSpacing: "0.3em", textTransform: "uppercase" }}>
+            {releasedIndices.size} départ{releasedIndices.size > 1 ? "s" : ""} sélectionné{releasedIndices.size > 1 ? "s" : ""}
+          </span>
+          <span style={{ color: S.faint, fontSize: 8 }}>/ 3 max</span>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto">
         {sorted.map(({ player, originalIndex }) => {
           const isReleased = releasedIndices.has(originalIndex);
-          const tier = player.rating >= 90 ? 3 : player.rating >= 85 ? 2 : 1;
-          const badgeBg = tier === 3 ? "#FFFFFF" : tier === 2 ? "#D4AF37" : "#0D0D0D";
-          const badgeFg = tier === 2 ? "#000000" : "#D4AF37";
-          const badgeBorder = tier === 3 ? "2px solid #D4AF37" : "none";
+          const blocked = !isReleased && releasedIndices.size >= 3;
           return (
             <button
               key={originalIndex}
               onClick={() => onToggle(originalIndex)}
-              disabled={!isReleased && releasedIndices.size >= 3}
-              className={`w-full flex items-center gap-3 px-5 py-3 border-b border-[var(--c-border-lo)] transition-all text-left ${
-                isReleased
-                  ? "bg-red-500/10 opacity-60"
-                  : releasedIndices.size >= 3
-                  ? "opacity-30 cursor-not-allowed"
-                  : "hover:bg-[var(--c-ghost)]"
-              }`}
+              disabled={blocked}
+              style={{
+                width: "100%", display: "flex", alignItems: "center", gap: 12,
+                padding: "12px 20px",
+                borderBottom: `1px solid ${S.border}`,
+                background: isReleased ? "rgba(239,68,68,0.08)" : "transparent",
+                opacity: blocked ? 0.3 : 1,
+                cursor: blocked ? "not-allowed" : "pointer",
+                textAlign: "left",
+                transition: "background 0.15s",
+              }}
             >
-              <div className="w-5 h-5 border border-[var(--c-border)] flex items-center justify-center flex-shrink-0">
-                {isReleased && <span className="text-red-400 text-xs font-black">✕</span>}
+              <div style={{
+                width: 20, height: 20, border: `1px solid ${isReleased ? "rgba(239,68,68,0.6)" : S.border}`,
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              }}>
+                {isReleased && <span style={{ color: "#F87171", fontSize: 10, fontWeight: 900 }}>✕</span>}
               </div>
-              <div className="flex-1 min-w-0">
-                <p className={`font-black text-xs uppercase tracking-wide truncate ${isReleased ? "line-through text-[var(--c-muted)]" : "text-c-fg"}`}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{
+                  fontWeight: 900, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em",
+                  color: isReleased ? S.muted : S.text,
+                  textDecoration: isReleased ? "line-through" : "none",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>
                   {abbreviateName(player.name)}
                 </p>
-                <p className="text-[9px] uppercase tracking-wider text-[var(--c-muted)] mt-0.5">
+                <p style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.25em", color: S.faint, marginTop: 2 }}>
                   {player.position}
-                  {player.club && <span className="ml-1 opacity-60">· {player.club.replace(/\s\d{2}-\d{2}$/, "")}</span>}
+                  {player.club && <span style={{ marginLeft: 4, opacity: 0.6 }}>· {player.club.replace(/\s\d{2}-\d{2}$/, "")}</span>}
                 </p>
               </div>
-              <span style={{ background: badgeBg, color: badgeFg, border: badgeBorder, padding: "1px 6px", fontSize: 10, fontWeight: 900, lineHeight: "16px", flexShrink: 0 }}>
-                {player.rating}
-              </span>
+              <PlayerBadge rating={player.rating} />
             </button>
           );
         })}
       </div>
-      <div className="flex-shrink-0 px-5 py-4 border-t border-[var(--c-border-lo)]">
-        <button
-          onClick={onConfirm}
-          className="w-full bg-c-gold hover:bg-[#F5F0E8] text-black font-black uppercase tracking-[0.2em] text-sm py-4 transition-colors"
-        >
+
+      <div style={{ flexShrink: 0, padding: "16px 20px", borderTop: `1px solid ${S.border}` }}>
+        <PrimaryButton onClick={onConfirm}>
           {releasedIndices.size === 0
             ? "Continuer sans changement →"
             : `Confirmer ${releasedIndices.size} départ${releasedIndices.size > 1 ? "s" : ""} →`}
-        </button>
+        </PrimaryButton>
       </div>
     </div>
   );
 }
 
-/* ── Phase 2 : Recruit ───────────────────────────────────────── */
+/* ── Phase 2 : Recrutement ───────────────────────────────────────── */
 
-function RecruitPhase({
-  remainingPlayers, slotsNeeded, onComplete,
-}: {
+function RecruitPhase({ remainingPlayers, slotsNeeded, onDone }: {
   remainingPlayers: Player[];
   slotsNeeded: number;
-  onComplete: (players: Player[]) => void;
+  onDone: (players: Player[]) => void;
 }) {
   const [recruited, setRecruited] = useState<Player[]>([]);
   const [currentClub, setCurrentClub] = useState(() => randomKey());
@@ -313,41 +384,31 @@ function RecruitPhase({
     (p) => !squadSoFar.some((sp) => sp.name === p.name)
   );
 
-  function handleNewClub() {
-    setCurrentClub(randomKey(shownClubs));
-    setAwaitingNewClub(false);
-  }
-
   function handleRerollSameClub() {
     if (sameClubRerolls <= 0) return;
     const { club } = getClubAndSeason(currentClub);
-    const nextShown = new Set([...shownClubs, currentClub]);
-    const options = Object.keys(clubs).filter((k) => getClubAndSeason(k).club === club && !nextShown.has(k));
-    if (options.length === 0) return;
-    setCurrentClub(options[Math.floor(Math.random() * options.length)]);
-    setShownClubs(nextShown);
-    setSameClubRerolls((n) => n - 1);
+    const next = new Set([...shownClubs, currentClub]);
+    const opts = Object.keys(clubs).filter((k) => getClubAndSeason(k).club === club && !next.has(k));
+    if (!opts.length) return;
+    setCurrentClub(opts[Math.floor(Math.random() * opts.length)]);
+    setShownClubs(next); setSameClubRerolls((n) => n - 1);
   }
 
   function handleRerollSameSeason() {
     if (sameSeasonRerolls <= 0) return;
     const { season } = getClubAndSeason(currentClub);
-    const nextShown = new Set([...shownClubs, currentClub]);
-    const options = Object.keys(clubs).filter((k) => getClubAndSeason(k).season === season && !nextShown.has(k));
-    if (options.length === 0) return;
-    setCurrentClub(options[Math.floor(Math.random() * options.length)]);
-    setShownClubs(nextShown);
-    setSameSeasonRerolls((n) => n - 1);
+    const next = new Set([...shownClubs, currentClub]);
+    const opts = Object.keys(clubs).filter((k) => getClubAndSeason(k).season === season && !next.has(k));
+    if (!opts.length) return;
+    setCurrentClub(opts[Math.floor(Math.random() * opts.length)]);
+    setShownClubs(next); setSameSeasonRerolls((n) => n - 1);
   }
 
   function handleSelectPlayer(player: Player) {
-    const withClub = { ...player, club: currentClub };
-    const next = [...recruited, withClub];
+    const next = [...recruited, { ...player, club: currentClub }];
     setRecruited(next);
     if (next.length < slotsNeeded) {
-      setShownClubs(new Set());
-      setCurrentClub(randomKey());
-      setAwaitingNewClub(true);
+      setShownClubs(new Set()); setCurrentClub(randomKey()); setAwaitingNewClub(true);
     }
   }
 
@@ -355,15 +416,21 @@ function RecruitPhase({
   const clubDisplayName = currentClub.replace(/\s\d{2}-\d{2}$/, "");
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col" style={{ minHeight: "100svh" }}>
+      <PhaseHeader title="Recrute tes remplaçants" step="Acte II · Recrutement" />
+      <InstructionBox lines={[
+        `Pour chaque départ, un club est tiré au sort. Choisis un joueur parmi ceux proposés.`,
+        "Tu as 3 relances disponibles par recrutement.",
+      ]} />
+
       {recruited.length > 0 && (
-        <div className="flex-shrink-0 px-5 py-2 border-b border-[var(--c-border-lo)] flex gap-2 flex-wrap">
+        <div style={{ borderBottom: `1px solid ${S.border}`, padding: "8px 20px", flexShrink: 0, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           {recruited.map((p, i) => (
-            <span key={i} className="text-[9px] font-black uppercase text-c-gold bg-c-gold/10 px-2 py-1">
+            <span key={i} style={{ fontSize: 9, fontWeight: 900, textTransform: "uppercase", color: S.accent, background: "rgba(143,175,200,0.1)", padding: "3px 8px" }}>
               {p.name.split(" ").at(-1)} · {p.rating}
             </span>
           ))}
-          <span className="text-[9px] text-[var(--c-muted)] uppercase tracking-wider self-center">
+          <span style={{ fontSize: 9, color: S.faint, textTransform: "uppercase", letterSpacing: "0.2em" }}>
             {recruited.length}/{slotsNeeded} recrues
           </span>
         </div>
@@ -372,30 +439,32 @@ function RecruitPhase({
       {done ? (
         <div className="flex-1 flex flex-col items-center justify-center px-5 gap-6">
           <div className="text-center">
-            <p className="text-c-gold font-black text-lg uppercase tracking-[0.3em] mb-2">Mercato terminé</p>
-            <p className="text-[var(--c-muted)] text-sm">{slotsNeeded} recrue{slotsNeeded > 1 ? "s" : ""} intégrée{slotsNeeded > 1 ? "s" : ""} à l&apos;effectif</p>
+            <p style={{ color: S.accent, fontSize: 13, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.3em", marginBottom: 8 }}>
+              Recrutement terminé
+            </p>
+            <p style={{ color: S.muted, fontSize: 12 }}>
+              {slotsNeeded} recrue{slotsNeeded > 1 ? "s" : ""} intégrée{slotsNeeded > 1 ? "s" : ""} à l&apos;effectif
+            </p>
           </div>
-          <button
-            onClick={() => onComplete([...remainingPlayers, ...recruited])}
-            className="w-full max-w-sm bg-c-gold hover:bg-[#F5F0E8] text-black font-black uppercase tracking-[0.2em] text-sm py-4 transition-colors"
-          >
-            Commencer la saison suivante →
-          </button>
+          <div className="w-full max-w-sm">
+            <PrimaryButton onClick={() => onDone([...remainingPlayers, ...recruited])}>
+              Passer à la pré-saison →
+            </PrimaryButton>
+          </div>
         </div>
       ) : awaitingNewClub ? (
-        <div className="flex-1 flex flex-col items-center justify-center px-5 gap-4">
-          <p className="text-[var(--c-muted)] text-xs uppercase tracking-[0.3em]">
+        <div className="flex-1 flex flex-col items-center justify-center px-5 gap-5">
+          <p style={{ color: S.muted, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.35em" }}>
             Recrue {recruited.length + 1} / {slotsNeeded}
           </p>
-          <button
-            onClick={handleNewClub}
-            className="w-full max-w-sm bg-c-gold hover:bg-[#F5F0E8] text-black font-black uppercase tracking-[0.2em] text-sm py-4 transition-colors"
-          >
-            Tirer un club →
-          </button>
+          <div className="w-full max-w-sm">
+            <PrimaryButton onClick={() => { setCurrentClub(randomKey(shownClubs)); setAwaitingNewClub(false); }}>
+              Tirer un club →
+            </PrimaryButton>
+          </div>
         </div>
       ) : (
-        <ClubDraft
+        <MercatoClubDraft
           clubDisplayName={clubDisplayName}
           season={season}
           players={currentPlayers}
@@ -413,112 +482,198 @@ function RecruitPhase({
   );
 }
 
-/* ── Club draft sub-component ────────────────────────────────── */
+/* ── Phase 3 : Pré-saison / Progression ─────────────────────────── */
 
-function ClubDraft({
-  clubDisplayName, season, players, squadSoFar,
-  sameClubRerolls, sameSeasonRerolls, hasOtherSeasons, slotLabel,
-  onSelectPlayer, onRerollSameClub, onRerollSameSeason,
-}: {
-  clubDisplayName: string;
-  season: string | null;
+function ProgressPhase({ players, onConfirm }: {
   players: Player[];
-  squadSoFar: Player[];
-  sameClubRerolls: number;
-  sameSeasonRerolls: number;
-  hasOtherSeasons: boolean;
-  slotLabel: string;
-  onSelectPlayer: (p: Player) => void;
-  onRerollSameClub: () => void;
-  onRerollSameSeason: () => void;
+  onConfirm: (players: Player[]) => void;
+}) {
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+
+  const sorted = [...players]
+    .map((p, i) => ({ player: p, originalIndex: i }))
+    .sort((a, b) => POSITION_ORDER.indexOf(a.player.position) - POSITION_ORDER.indexOf(b.player.position));
+
+  function handleConfirm() {
+    if (selectedIndex === null) { onConfirm(players); return; }
+    onConfirm(players.map((p, i) => i === selectedIndex ? { ...p, rating: Math.min(99, p.rating + 2) } : p));
+  }
+
+  return (
+    <div className="flex flex-col" style={{ minHeight: "100svh" }}>
+      <PhaseHeader title="Stage de pré-saison" step="Acte III · Entraînement" />
+      <InstructionBox lines={[
+        "Choisis un joueur pour lui faire suivre un stage intensif. Il gagne +2 points de note.",
+        "Appuie sur Lancer la saison si tu ne veux booster personne. Maximum atteignable : 97.",
+      ]} />
+
+      <div className="flex-1 overflow-y-auto">
+        {sorted.map(({ player, originalIndex }) => {
+          const isSelected = selectedIndex === originalIndex;
+          const blocked = player.rating >= 98;
+          const displayRating = isSelected ? Math.min(99, player.rating + 2) : player.rating;
+          return (
+            <button
+              key={originalIndex}
+              onClick={() => !blocked && setSelectedIndex(isSelected ? null : originalIndex)}
+              disabled={blocked}
+              style={{
+                width: "100%", display: "flex", alignItems: "center", gap: 12,
+                padding: "12px 20px",
+                borderBottom: `1px solid ${S.border}`,
+                background: isSelected ? "rgba(143,175,200,0.07)" : "transparent",
+                opacity: blocked ? 0.3 : 1,
+                cursor: blocked ? "not-allowed" : "pointer",
+                textAlign: "left",
+                transition: "background 0.15s",
+              }}
+            >
+              <div style={{
+                width: 20, height: 20,
+                border: `1px solid ${isSelected ? S.accent : S.border}`,
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                transition: "border-color 0.15s",
+              }}>
+                {isSelected && <span style={{ color: S.accent, fontSize: 10, fontWeight: 900 }}>↑</span>}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{
+                  fontWeight: 900, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em",
+                  color: isSelected ? S.accent : S.text,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  transition: "color 0.15s",
+                }}>
+                  {abbreviateName(player.name)}
+                </p>
+                <p style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.25em", color: S.faint, marginTop: 2 }}>
+                  {player.position}
+                  {player.club && <span style={{ marginLeft: 4, opacity: 0.6 }}>· {player.club.replace(/\s\d{2}-\d{2}$/, "")}</span>}
+                </p>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                {isSelected && (
+                  <span style={{ color: S.accent, fontSize: 9, fontWeight: 900, letterSpacing: "0.15em" }}>+2</span>
+                )}
+                <PlayerBadge rating={displayRating} />
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ flexShrink: 0, padding: "16px 20px", borderTop: `1px solid ${S.border}` }}>
+        <PrimaryButton onClick={handleConfirm}>
+          {selectedIndex === null ? "Lancer la saison →" : "Confirmer le stage →"}
+        </PrimaryButton>
+      </div>
+    </div>
+  );
+}
+
+/* ── Club draw (Recrutement) ─────────────────────────────────────── */
+
+function MercatoClubDraft({ clubDisplayName, season, players, squadSoFar, sameClubRerolls, sameSeasonRerolls, hasOtherSeasons, slotLabel, onSelectPlayer, onRerollSameClub, onRerollSameSeason }: {
+  clubDisplayName: string; season: string | null; players: Player[]; squadSoFar: Player[];
+  sameClubRerolls: number; sameSeasonRerolls: number; hasOtherSeasons: boolean; slotLabel: string;
+  onSelectPlayer: (p: Player) => void; onRerollSameClub: () => void; onRerollSameSeason: () => void;
 }) {
   const [isSpinning, setIsSpinning] = useState(true);
   const [spinName, setSpinName] = useState(clubDisplayName);
-  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
-    timersRef.current.forEach(clearTimeout);
-    timersRef.current = [];
+    timers.current.forEach(clearTimeout); timers.current = [];
     const pool = SPIN_POOL.filter((n) => n !== clubDisplayName);
     setIsSpinning(true);
-    const schedule: [number, string | null][] = [];
+    const sched: [number, string | null][] = [];
     let t = 0;
-    for (let i = 0; i < 10; i++) { t += 65; schedule.push([t, pool[Math.floor(Math.random() * pool.length)]]); }
-    for (let i = 0; i < 4; i++) { t += 120; schedule.push([t, pool[Math.floor(Math.random() * pool.length)]]); }
-    for (let i = 0; i < 3; i++) { t += 200; schedule.push([t, pool[Math.floor(Math.random() * pool.length)]]); }
-    t += 220;
-    schedule.push([t, null]);
-    for (const [delay, name] of schedule) {
+    for (let i = 0; i < 10; i++) { t += 65; sched.push([t, pool[Math.floor(Math.random() * pool.length)]]); }
+    for (let i = 0; i < 4; i++) { t += 120; sched.push([t, pool[Math.floor(Math.random() * pool.length)]]); }
+    for (let i = 0; i < 3; i++) { t += 200; sched.push([t, pool[Math.floor(Math.random() * pool.length)]]); }
+    sched.push([t + 220, null]);
+    for (const [delay, name] of sched) {
       const id = setTimeout(() => {
         if (name === null) { setSpinName(clubDisplayName); setIsSpinning(false); }
         else setSpinName(name);
       }, delay);
-      timersRef.current.push(id);
+      timers.current.push(id);
     }
-    return () => { timersRef.current.forEach(clearTimeout); };
+    return () => { timers.current.forEach(clearTimeout); };
   }, [clubDisplayName]);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="px-5 py-4 border-b border-[var(--c-border)] flex-shrink-0">
-        <p className="text-[var(--c-muted)] uppercase tracking-[0.3em] text-[9px] font-bold mb-1">{slotLabel}</p>
-        <h2 className={`text-lg font-black leading-tight transition-colors duration-150 ${isSpinning ? "text-c-gold/60" : "text-c-fg"}`}>
+    <div className="flex flex-col flex-1 overflow-hidden">
+      {/* Club header */}
+      <div style={{ padding: "16px 20px", borderBottom: `1px solid ${S.border}`, flexShrink: 0 }}>
+        <p style={{ color: S.faint, fontSize: 9, fontWeight: 700, letterSpacing: "0.3em", textTransform: "uppercase", marginBottom: 4 }}>{slotLabel}</p>
+        <h2 style={{
+          fontSize: 18, fontWeight: 900, lineHeight: 1.2,
+          color: isSpinning ? "rgba(143,175,200,0.45)" : S.text,
+          transition: "color 0.15s",
+        }}>
           {spinName}
         </h2>
         {!isSpinning && season && (
-          <p className="text-c-gold text-[10px] italic mt-0.5">Saison {season}</p>
+          <p style={{ color: S.accent, fontSize: 10, fontStyle: "italic", marginTop: 3 }}>Saison {season}</p>
         )}
         {!isSpinning && (
-          <div className="mt-3 space-y-2">
-            <div className="flex gap-2">
-              <button
-                onClick={onRerollSameClub}
-                disabled={!hasOtherSeasons || sameClubRerolls <= 0}
-                className="flex-1 border border-c-gold/50 hover:border-c-gold text-c-gold font-black uppercase tracking-[0.1em] text-[9px] py-2 transition-colors disabled:opacity-25 disabled:cursor-not-allowed"
-              >
-                ↻ Même club, autre saison
-              </button>
-              <button
-                onClick={onRerollSameSeason}
-                disabled={sameSeasonRerolls <= 0}
-                className="flex-1 border border-c-gold/50 hover:border-c-gold text-c-gold font-black uppercase tracking-[0.1em] text-[9px] py-2 transition-colors disabled:opacity-25 disabled:cursor-not-allowed"
-              >
-                ↻ Autre club, même saison
-              </button>
-            </div>
-            <div className="flex justify-between text-[8px] uppercase tracking-wider text-[var(--c-muted)] px-0.5">
-              <span>{sameClubRerolls}/3</span>
-              <span>{sameSeasonRerolls}/3</span>
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              {[
+                { label: "↻ Même club, autre saison", onClick: onRerollSameClub, disabled: !hasOtherSeasons || sameClubRerolls <= 0, count: sameClubRerolls },
+                { label: "↻ Autre club, même saison", onClick: onRerollSameSeason, disabled: sameSeasonRerolls <= 0, count: sameSeasonRerolls },
+              ].map(({ label, onClick, disabled, count }) => (
+                <button
+                  key={label}
+                  onClick={onClick}
+                  disabled={disabled}
+                  style={{
+                    flex: 1, border: `1px solid ${disabled ? S.border : S.borderHi}`,
+                    color: disabled ? S.faint : S.accent,
+                    fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em",
+                    padding: "6px 4px", cursor: disabled ? "not-allowed" : "pointer",
+                    background: "transparent", transition: "border-color 0.15s",
+                  }}
+                >
+                  {label} · {count}/3
+                </button>
+              ))}
             </div>
           </div>
         )}
       </div>
+
+      {/* Player list */}
       <div className="flex-1 overflow-y-auto">
         {!isSpinning && (
           <>
-            <div className="px-5 py-3 border-b border-[var(--c-border-lo)]">
-              <p className="text-[var(--c-muted)] uppercase tracking-[0.35em] text-[9px] font-bold">Choisis un joueur</p>
+            <div style={{ padding: "10px 20px", borderBottom: `1px solid ${S.border}` }}>
+              <p style={{ color: S.muted, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.35em" }}>
+                Choisis un joueur
+              </p>
             </div>
             {players.map((player) => {
               const count = squadSoFar.filter((sp) => sp.position === player.position).length;
-              const max = MAX_BY_POSITION[player.position] ?? 1;
-              const full = count >= max;
+              const full = count >= (MAX_BY_POSITION[player.position] ?? 1);
               return (
                 <button
                   key={player.name}
                   disabled={full}
                   onClick={() => onSelectPlayer(player)}
-                  className={`w-full flex items-center justify-between px-5 py-2.5 border-b border-[var(--c-border-lo)] transition-colors ${
-                    full ? "opacity-25 cursor-not-allowed" : "hover:bg-[var(--c-ghost)]"
-                  }`}
+                  style={{
+                    width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "10px 20px", borderBottom: `1px solid ${S.border}`,
+                    background: "transparent", cursor: full ? "not-allowed" : "pointer",
+                    opacity: full ? 0.25 : 1, textAlign: "left", transition: "background 0.1s",
+                  }}
+                  onMouseEnter={e => { if (!full) (e.currentTarget as HTMLButtonElement).style.background = "rgba(143,175,200,0.05)"; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
                 >
-                  <div className="text-left">
-                    <p className="font-black text-xs text-c-fg">{abbreviateName(player.name)}</p>
-                    <p className="text-[9px] uppercase tracking-wider text-[var(--c-muted)] mt-0.5">{player.position}</p>
+                  <div>
+                    <p style={{ fontWeight: 900, fontSize: 11, color: S.text }}>{abbreviateName(player.name)}</p>
+                    <p style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.25em", color: S.faint, marginTop: 2 }}>{player.position}</p>
                   </div>
-                  <span className={`font-black text-base ml-4 ${full ? "text-[var(--c-faint)]" : "text-c-gold"}`}>
-                    {player.rating}
-                  </span>
+                  <PlayerBadge rating={player.rating} />
                 </button>
               );
             })}
