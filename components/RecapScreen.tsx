@@ -56,12 +56,18 @@ function sortByPosition(players: Player[]): { player: Player; jersey: number }[]
   });
 }
 
-type RecordRow = { label: string; display: string; season: number; isNew: boolean };
+type RecordRow = { label: string; display: string; season: number | null; isNew: boolean };
 
 function buildRecordRows(history: SeasonRecord[]): RecordRow[] {
   if (history.length === 0) return [];
   const cur = history[history.length - 1];
   const rows: RecordRow[] = [];
+
+  const champSeasons = history.filter(s => s.playoffOutcome === "champion");
+  if (champSeasons.length > 0) {
+    const list = champSeasons.map(s => `S${s.seasonNumber}`).join(", ");
+    rows.push({ label: "Bouclier de Brennus", display: `${champSeasons.length} titre${champSeasons.length > 1 ? "s" : ""} · ${list}`, season: null, isNew: cur.playoffOutcome === "champion" });
+  }
 
   const bestRanking = history.reduce((b, s) => s.finalPosition < b.finalPosition ? s : b);
   rows.push({ label: "Meilleur classement", display: `${bestRanking.finalPosition}e`, season: bestRanking.seasonNumber, isNew: bestRanking.seasonNumber === cur.seasonNumber });
@@ -319,12 +325,14 @@ export function RecapScreen({
                     style={{ color: row.isNew ? "#D4AF37" : "var(--c-fg)" }}
                   >
                     {row.display}
-                    <span
-                      className="ml-1 font-normal"
-                      style={{ fontSize: 8, color: row.isNew ? "rgba(212,175,55,0.7)" : "var(--c-faint)" }}
-                    >
-                      · S{row.season}
-                    </span>
+                    {row.season !== null && (
+                      <span
+                        className="ml-1 font-normal"
+                        style={{ fontSize: 8, color: row.isNew ? "rgba(212,175,55,0.7)" : "var(--c-faint)" }}
+                      >
+                        · S{row.season}
+                      </span>
+                    )}
                   </span>
                 </div>
               ))}
