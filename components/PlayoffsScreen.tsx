@@ -38,7 +38,7 @@ const G = {
 };
 
 const CONFETTI_COLORS = ["#D4AF37", "#F5F0E8", "#ffffff", "#B8860B", "#FFE066", "#FFF8DC"];
-const TICK_MS = 1400;
+const TICK_MS = 100;
 
 function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -137,7 +137,7 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
 
       let minute = startMinute;
       intervalRef.current = setInterval(() => {
-        minute += 5;
+        minute += 1;
         const all = [...priorEvents, ...halfEvents];
         const visible = all.filter(e => e.minute <= minute);
         setOvMinute(minute);
