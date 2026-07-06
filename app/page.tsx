@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { HomeScreen } from "@/components/HomeScreen";
 import { DraftScreen } from "@/components/DraftScreen";
 import { SeasonScreen } from "@/components/SeasonScreen";
@@ -61,6 +61,7 @@ export default function Home() {
   const [seasonNumber, setSeasonNumber] = useState(1);
   const [seasonTries, setSeasonTries] = useState<Record<string, number>>({});
   const [seasonHistory, setSeasonHistory] = useState<SeasonRecord[]>([]);
+  const currentRecordRef = useRef<SeasonRecord | null>(null);
 
   const teamRating = useMemo(() => {
     if (selectedPlayers.length === 0) return 0;
@@ -189,6 +190,7 @@ export default function Home() {
     setMyFinalPosition(pos);
     if (!top6.includes(myTeamName)) {
       const record = buildSeasonRecord(seasonRevealed, seasonTries, pos, seasonNumber, "non-qualifié");
+      currentRecordRef.current = record;
       setSeasonHistory((prev) => [...prev, record]);
       setPlayoffSummary({ outcome: "non-qualifié", matches: [] });
       setScreen("recap");
@@ -199,6 +201,7 @@ export default function Home() {
 
   function handlePlayoffsComplete(summary: PlayoffSummary) {
     const record = buildSeasonRecord(seasonRevealed, seasonTries, myFinalPosition, seasonNumber, summary.outcome);
+    currentRecordRef.current = record;
     setSeasonHistory((prev) => [...prev, record]);
     setPlayoffSummary(summary);
     setScreen("recap");
@@ -250,6 +253,7 @@ export default function Home() {
     setSeasonNumber(1);
     setSeasonTries({});
     setSeasonHistory([]);
+    currentRecordRef.current = null;
   }
 
   let content: React.ReactNode;
@@ -312,6 +316,7 @@ export default function Home() {
         myFinalPosition={myFinalPosition}
         playoffSummary={playoffSummary}
         seasonHistory={seasonHistory}
+        currentRecord={currentRecordRef.current}
         onReplay={handleReplay}
         onNextSeason={handleNextSeason}
       />

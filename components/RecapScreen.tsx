@@ -13,6 +13,7 @@ interface Props {
   myFinalPosition: number;
   playoffSummary: PlayoffSummary;
   seasonHistory: SeasonRecord[];
+  currentRecord: SeasonRecord | null;
   onReplay: () => void;
   onNextSeason: () => void;
 }
@@ -113,6 +114,7 @@ export function RecapScreen({
   myFinalPosition,
   playoffSummary,
   seasonHistory,
+  currentRecord,
   onReplay,
   onNextSeason,
 }: Props) {
@@ -139,7 +141,13 @@ export function RecapScreen({
     playoffSummary.outcome === "eliminé" ? `Éliminé en ${playoffSummary.eliminatedIn ?? "play-offs"}` :
     "Saison régulière";
 
-  const recordRows = buildRecordRows(seasonHistory);
+  // Guarantee current season is always present using the ref (set synchronously before state updates)
+  const effectiveHistory = (() => {
+    if (!currentRecord) return seasonHistory;
+    const alreadyIn = seasonHistory.some(r => r.seasonNumber === currentRecord.seasonNumber);
+    return alreadyIn ? seasonHistory : [...seasonHistory, currentRecord];
+  })();
+  const recordRows = buildRecordRows(effectiveHistory);
   const hasNewRecord = recordRows.some(r => r.isNew);
 
   async function handleShare() {
