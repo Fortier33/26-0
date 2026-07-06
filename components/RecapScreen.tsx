@@ -345,23 +345,23 @@ export function RecapScreen({
       {/* Action buttons — outside shareable area, pinned at bottom */}
       <div className="flex-shrink-0 px-5 pb-6 pt-3 space-y-2 border-t border-[var(--c-border-lo)]">
         <button
-          onClick={handleShare}
-          disabled={isSharing}
-          className="w-full bg-c-gold hover:bg-[#F5F0E8] disabled:bg-c-fg/10 disabled:text-[var(--c-faint)] disabled:cursor-not-allowed text-black font-black uppercase tracking-[0.2em] text-xs py-4 transition-colors"
-        >
-          {isSharing ? "Génération…" : "Partager mon XV →"}
-        </button>
-        <button
           onClick={onNextSeason}
-          className="w-full border border-c-gold/50 hover:border-c-gold text-c-gold hover:text-c-gold font-black uppercase tracking-[0.2em] text-xs py-3 transition-colors"
+          className="w-full bg-c-gold hover:bg-[#F5F0E8] text-black font-black uppercase tracking-[0.2em] text-xs py-4 transition-colors"
         >
           Saison suivante →
+        </button>
+        <button
+          onClick={handleShare}
+          disabled={isSharing}
+          className="w-full border border-c-gold/50 hover:border-c-gold disabled:opacity-30 disabled:cursor-not-allowed text-c-gold font-black uppercase tracking-[0.2em] text-xs py-3 transition-colors"
+        >
+          {isSharing ? "Génération…" : "Partager mon XV →"}
         </button>
         <button
           onClick={onReplay}
           className="w-full border border-[var(--c-border)] hover:border-c-gold/50 text-[var(--c-muted)] hover:text-c-fg font-black uppercase tracking-[0.2em] text-xs py-3 transition-colors"
         >
-          ↺ Recommencer de zéro
+          Retour au menu principal
         </button>
       </div>
 
