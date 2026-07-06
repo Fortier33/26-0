@@ -13,6 +13,7 @@ interface Props {
   myFinalPosition: number;
   playoffSummary: PlayoffSummary;
   onReplay: () => void;
+  onNextSeason: () => void;
 }
 
 const POSITION_ORDER = [
@@ -64,6 +65,7 @@ export function RecapScreen({
   myFinalPosition,
   playoffSummary,
   onReplay,
+  onNextSeason,
 }: Props) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [isSharing, setIsSharing] = useState(false);
@@ -249,10 +251,16 @@ export function RecapScreen({
           {isSharing ? "Génération…" : "Partager mon XV →"}
         </button>
         <button
+          onClick={onNextSeason}
+          className="w-full border border-c-gold/50 hover:border-c-gold text-c-gold hover:text-c-gold font-black uppercase tracking-[0.2em] text-xs py-3 transition-colors"
+        >
+          Saison suivante →
+        </button>
+        <button
           onClick={onReplay}
           className="w-full border border-[var(--c-border)] hover:border-c-gold/50 text-[var(--c-muted)] hover:text-c-fg font-black uppercase tracking-[0.2em] text-xs py-3 transition-colors"
         >
-          ↺ Rejouer
+          ↺ Recommencer de zéro
         </button>
       </div>
 

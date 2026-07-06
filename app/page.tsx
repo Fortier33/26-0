@@ -6,6 +6,7 @@ import { DraftScreen } from "@/components/DraftScreen";
 import { SeasonScreen } from "@/components/SeasonScreen";
 import { PlayoffsScreen } from "@/components/PlayoffsScreen";
 import { RecapScreen } from "@/components/RecapScreen";
+import { MercatoScreen } from "@/components/MercatoScreen";
 import { BlackoutTransition } from "@/components/BlackoutTransition";
 import { clubs, buildCalendar } from "@/lib/data";
 import { generateLeagueResults } from "@/lib/simulation";
@@ -161,6 +162,30 @@ export default function Home() {
     setScreen("recap");
   }
 
+  function handleNextSeason() {
+    setCalendar([]);
+    setLeagueResults({});
+    setCurrentMatchIndex(0);
+    setSeasonRevealed([]);
+    setRegularSeasonDone(false);
+    setQualifiedTeams([]);
+    setMyFinalPosition(0);
+    setPlayoffSummary(null);
+    setScreen("mercato");
+  }
+
+  function handleMercatoComplete(newPlayers: Player[]) {
+    const cal = buildCalendar();
+    const opponents = [...new Set(cal.map((e) => e.opponent))];
+    setSelectedPlayers(newPlayers);
+    setCalendar(cal);
+    setLeagueResults(generateLeagueResults(opponents));
+    setCurrentMatchIndex(0);
+    setSeasonRevealed([]);
+    setRegularSeasonDone(false);
+    setScreen("season");
+  }
+
   function handleReplay() {
     const keys = Object.keys(clubs);
     setScreen("home");
@@ -240,6 +265,14 @@ export default function Home() {
         myFinalPosition={myFinalPosition}
         playoffSummary={playoffSummary}
         onReplay={handleReplay}
+        onNextSeason={handleNextSeason}
+      />
+    );
+  } else if (screen === "mercato") {
+    content = (
+      <MercatoScreen
+        selectedPlayers={selectedPlayers}
+        onComplete={handleMercatoComplete}
       />
     );
   } else {

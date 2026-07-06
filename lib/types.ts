@@ -26,7 +26,7 @@ export type MatchResult = {
   result: "Victoire" | "Défaite" | "Nul";
 };
 
-export type Screen = "home" | "draft" | "season" | "playoffs" | "recap";
+export type Screen = "home" | "draft" | "season" | "playoffs" | "recap" | "mercato";
 
 export type PlayoffMatchSummary = {
   round: string;
