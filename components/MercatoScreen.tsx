@@ -443,7 +443,7 @@ function RecruitPhase({ remainingPlayers, slotsNeeded, onDone }: {
               Recrutement terminé
             </p>
             <p style={{ color: S.muted, fontSize: 12 }}>
-              {slotsNeeded} recrue{slotsNeeded > 1 ? "s" : ""} intégrée{slotsNeeded > 1 ? "s" : ""} à l&apos;effectif
+              {slotsNeeded} recrue{slotsNeeded > 1 ? "s" : ""} intégrée{slotsNeeded > 1 ? "s" : ""}{" "}à l&apos;effectif
             </p>
           </div>
           <div className="w-full max-w-sm">
