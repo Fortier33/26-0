@@ -18,7 +18,7 @@ interface SeasonScreenProps {
   seasonRevealed: string[];
   regularSeasonDone: boolean;
   calendar: CalendarEntry[];
-  onMatchComplete: (resultLine: string) => void;
+  onMatchComplete: (resultLine: string, events: MatchEvent[]) => void;
   onGoToRanking: () => void;
 }
 
@@ -100,7 +100,7 @@ export function SeasonScreen({
     setLiveMyScore(match.myScore);
     setLiveOpponentScore(match.opponentScore);
     setMatchEvents(match.events);
-    onMatchComplete(buildResultLine(match, isHome));
+    onMatchComplete(buildResultLine(match, isHome), match.events);
   }
 
   function startMatch() {
@@ -133,7 +133,7 @@ export function SeasonScreen({
         clearInterval(intervalRef.current!);
         intervalRef.current = null;
         setIsRunning(false);
-        onMatchComplete(buildResultLine(m, e.isHome));
+        onMatchComplete(buildResultLine(m, e.isHome), m.events);
       }
     };
 
@@ -167,7 +167,7 @@ export function SeasonScreen({
     let lastMatch: MatchResult | null = null;
     for (let idx = currentMatchIndex; idx < endIndex; idx++) {
       const match = simulateMatch(teamRating, calendar[idx], selectedPlayers, idx + 1);
-      onMatchComplete(buildResultLine(match, calendar[idx].isHome));
+      onMatchComplete(buildResultLine(match, calendar[idx].isHome), match.events);
       lastMatch = match;
     }
     if (lastMatch) {
