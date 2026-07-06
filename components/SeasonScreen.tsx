@@ -205,10 +205,13 @@ export function SeasonScreen({
           <div className="relative">
             <button
               onClick={() => setSpeedOpen((o) => !o)}
-              className="flex items-center gap-1.5 border border-[var(--c-border)] hover:border-c-gold/40 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.2em] text-[var(--c-muted)] hover:text-c-gold transition-colors"
+              className="flex flex-col items-center gap-0.5 border border-[var(--c-border)] hover:border-c-gold/40 px-3 py-1.5 transition-colors group"
             >
-              {matchSpeed === "normal" ? "Normal" : matchSpeed === "fast" ? "Accéléré" : "Ultra"}
-              <span className="text-[7px] opacity-60">{speedOpen ? "▴" : "▾"}</span>
+              <span className="text-[8px] uppercase tracking-[0.15em] text-[var(--c-faint)] group-hover:text-c-gold/50">Vitesse des matchs</span>
+              <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-[0.2em] text-[var(--c-muted)] group-hover:text-c-gold">
+                {matchSpeed === "normal" ? "Normal" : matchSpeed === "fast" ? "Accéléré" : "Ultra"}
+                <span className="text-[7px] opacity-60">{speedOpen ? "▴" : "▾"}</span>
+              </span>
             </button>
             {speedOpen && (
               <div className="absolute right-0 top-full mt-1 bg-c-surface border border-[var(--c-border)] z-20 min-w-[100px]">
