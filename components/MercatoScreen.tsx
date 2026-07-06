@@ -504,7 +504,7 @@ function ProgressPhase({ players, onConfirm }: {
       <PhaseHeader title="Stage de pré-saison" step="Acte III · Entraînement" />
       <InstructionBox lines={[
         "Choisis un joueur pour lui faire suivre un stage intensif. Il gagne +2 points de note.",
-        "Appuie sur Lancer la saison si tu ne veux booster personne. Maximum atteignable : 97.",
+        "Appuie sur Lancer la saison si tu ne veux booster personne. Maximum atteignable : 99.",
       ]} />
 
       <div className="flex-1 overflow-y-auto">
@@ -563,7 +563,7 @@ function ProgressPhase({ players, onConfirm }: {
 
       <div style={{ flexShrink: 0, padding: "16px 20px", borderTop: `1px solid ${S.border}` }}>
         <PrimaryButton onClick={handleConfirm}>
-          {selectedIndex === null ? "Lancer la saison →" : "Confirmer le stage →"}
+          {selectedIndex === null ? "Lancer la saison →" : "Confirmer →"}
         </PrimaryButton>
       </div>
     </div>
