@@ -30,6 +30,13 @@ export default function Home() {
     if (stored) setTheme(stored);
   }, []);
 
+  useEffect(() => {
+    if (screen === "home") return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [screen]);
+
   function toggleTheme() {
     setTheme((t) => {
       const next = t === "dark" ? "light" : "dark";
