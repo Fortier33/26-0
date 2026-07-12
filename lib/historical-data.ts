@@ -4998,7 +4998,7 @@ const currentSeasonStrengths: Record<string, number> = {
   "Castres Olympique 25-26":         83,
   "Aviron Bayonnais 25-26":          83,
   "USA Perpignan 25-26":             83,
-  "US Montauban 25-26":              82,
+  "US Montauban 25-26":              74,
 };
 
 export const teamStrengths: Record<string, number> = {

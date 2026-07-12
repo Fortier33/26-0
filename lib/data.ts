@@ -47,11 +47,71 @@ export function getClubRating(clubName: string): number {
 }
 
 export function buildCalendar(): CalendarEntry[] {
-  const all: CalendarEntry[] = [
-    ...OPPONENTS.map((opp) => ({ opponent: opp, isHome: true })),
-    ...OPPONENTS.map((opp) => ({ opponent: opp, isHome: false })),
+  // Shuffle opponents to randomize order
+  const shuffled = [...OPPONENTS].sort(() => Math.random() - 0.5);
+
+  // First half: 7 home + 6 away (or 6+7), randomly assigned per opponent
+  const h1Count = Math.random() < 0.5 ? 7 : 6;
+  const firstHalf: CalendarEntry[] = shuffled.map((opp, i) => ({
+    opponent: opp,
+    isHome: i < h1Count,
+  }));
+
+  // Second half: complement — each opponent with flipped home/away
+  const secondHalf: CalendarEntry[] = shuffled.map((opp, i) => ({
+    opponent: opp,
+    isHome: i >= h1Count,
+  }));
+
+  return [
+    ...constrainedShuffle(firstHalf),
+    ...constrainedShuffle(secondHalf),
   ];
-  return all.sort(() => Math.random() - 0.5);
+}
+
+function constrainedShuffle(entries: CalendarEntry[]): CalendarEntry[] {
+  // Try random shuffles first (almost always finds valid in <20 tries for 6/7 split)
+  for (let i = 0; i < 500; i++) {
+    const arr = [...entries].sort(() => Math.random() - 0.5);
+    if (maxConsecutive(arr) <= 2) return arr;
+  }
+  // Guaranteed fallback: greedy interleave
+  return greedyInterleave(entries);
+}
+
+function maxConsecutive(entries: CalendarEntry[]): number {
+  let max = 1, cur = 1;
+  for (let i = 1; i < entries.length; i++) {
+    cur = entries[i].isHome === entries[i - 1].isHome ? cur + 1 : 1;
+    if (cur > max) max = cur;
+  }
+  return max;
+}
+
+function greedyInterleave(entries: CalendarEntry[]): CalendarEntry[] {
+  const home = entries.filter(e => e.isHome).sort(() => Math.random() - 0.5);
+  const away = entries.filter(e => !e.isHome).sort(() => Math.random() - 0.5);
+  const result: CalendarEntry[] = [];
+  let hi = 0, ai = 0;
+
+  while (hi < home.length || ai < away.length) {
+    const last2 = result.slice(-2);
+    const streak2Home = last2.length === 2 && last2.every(e => e.isHome);
+    const streak2Away = last2.length === 2 && last2.every(e => !e.isHome);
+
+    if (streak2Home && ai < away.length) {
+      result.push(away[ai++]);
+    } else if (streak2Away && hi < home.length) {
+      result.push(home[hi++]);
+    } else if (hi < home.length && ai < away.length) {
+      Math.random() < 0.5 ? result.push(home[hi++]) : result.push(away[ai++]);
+    } else if (hi < home.length) {
+      result.push(home[hi++]);
+    } else {
+      result.push(away[ai++]);
+    }
+  }
+  return result;
 }
 
 export const MAX_BY_POSITION: Record<string, number> = {

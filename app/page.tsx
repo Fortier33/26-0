@@ -222,7 +222,8 @@ export default function Home() {
     setSeasonRevealed([]);
     setRegularSeasonDone(false);
     setQualifiedTeams([]);
-    setMyFinalPosition(0);
+    // myFinalPosition is intentionally kept: the mercato uses it to compute the rating cap.
+    // It will be overwritten by handleGoToPlayoffs() at the end of the new season.
     setPlayoffSummary(null);
     setSeasonTries({});
     setSeasonNumber((n) => n + 1);
@@ -333,6 +334,8 @@ export default function Home() {
     content = (
       <MercatoScreen
         selectedPlayers={selectedPlayers}
+        seasonNumber={seasonNumber}
+        myFinalPosition={myFinalPosition}
         onComplete={handleMercatoComplete}
       />
     );

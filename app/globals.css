@@ -45,6 +45,20 @@ body {
   overscroll-behavior: none;
 }
 
+button {
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+/* ── Ball burst animation ───────────────────────── */
+@keyframes ballDrop {
+  0%   { transform: translateY(-180px) scale(0.3) rotate(-25deg); opacity: 0; }
+  45%  { opacity: 1; }
+  68%  { transform: translateY(18px) scale(1.12) rotate(6deg); }
+  84%  { transform: translateY(-9px) scale(0.94) rotate(-3deg); }
+  100% { transform: translateY(0) scale(1) rotate(0deg); opacity: 1; }
+}
+
 /* ── Transition écrans ──────────────────────────── */
 @keyframes screen-fade-in {
   from { opacity: 0; transform: translateY(6px); }

@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { beginPlayoffMatch, simulatePlayoffMatch } from "@/lib/simulation";
 import type { HalfTimeChoice } from "@/lib/simulation";
 import type { MatchEvent, Player, PlayoffMatchSummary, PlayoffSummary } from "@/lib/types";
+import { GoldenFlashAnimation } from "./GoldenFlashAnimation";
 
 const strip = (s: string) => s.replace(/\s\d{2}-\d{2}$/, "");
 
@@ -37,30 +38,10 @@ const G = {
   divider:     "bg-c-gold/15",
 };
 
-const CONFETTI_COLORS = ["#D4AF37", "#F5F0E8", "#ffffff", "#B8860B", "#FFE066", "#FFF8DC"];
 const TICK_MS = 150;
 
 function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
-}
-
-function ConfettiOverlay() {
-  return (
-    <>
-      <style>{`@keyframes confetti-drop{0%{transform:translateY(-10px) rotate(0deg);opacity:1}80%{opacity:.9}100%{transform:translateY(110vh) rotate(1080deg);opacity:0}}`}</style>
-      <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, pointerEvents: "none", zIndex: 60, overflow: "hidden" }}>
-        {Array.from({ length: 80 }, (_, i) => (
-          <div key={i} style={{
-            position: "absolute", top: 0, left: `${(i * 1.25) % 100}%`,
-            width: i % 4 === 0 ? 10 : 6, height: i % 4 === 0 ? 6 : 13,
-            backgroundColor: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-            borderRadius: i % 5 === 0 ? "50%" : 2,
-            animation: `confetti-drop ${2.5 + (i % 20) * 0.08}s ${(i % 40) * 0.05}s ease-in forwards`,
-          }} />
-        ))}
-      </div>
-    </>
-  );
 }
 
 export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualifiedTeams, onComplete }: Props) {
@@ -74,7 +55,9 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
   const [simulating, setSimulating] = useState(false);
   const [flashKey, setFlashKey] = useState<string | null>(null);
   const [eliminatedIn, setEliminatedIn] = useState<string | null>(null);
-  const [showConfetti, setShowConfetti] = useState(false);
+  const [showChampionAnim, setShowChampionAnim] = useState(false);
+  const [myMatchEvents, setMyMatchEvents] = useState<Record<string, MatchEvent[]>>({});
+  const [expandedMatchKey, setExpandedMatchKey] = useState<string | null>(null);
 
   /* ── overlay state ───────────────────────────────────────── */
   const [overlay, setOverlay] = useState(false);
@@ -91,6 +74,7 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const resolvePhaseRef = useRef<(() => void) | null>(null);
   const halftimeResolverRef = useRef<((c: HalfTimeChoice) => void) | null>(null);
+  const allEventsRef = useRef<MatchEvent[]>([]);
 
   /* ── seedings ────────────────────────────────────────────── */
   const t1 = qualifiedTeams[0] ?? "—";
@@ -126,6 +110,7 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
       const finish = () => {
         if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
         const all = [...priorEvents, ...halfEvents];
+        allEventsRef.current = all;
         setOvMinute(endMinute);
         setOvMyScore(all.filter(e => e.team === "me").reduce((s, e) => s + e.points, 0));
         setOvOppScore(all.filter(e => e.team === "opponent").reduce((s, e) => s + e.points, 0));
@@ -149,7 +134,7 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
     });
   }
 
-  async function revealMyMatch(home: string, away: string, setter: (r: RoundMatch) => void): Promise<RoundMatch> {
+  async function revealMyMatch(home: string, away: string, setter: (r: RoundMatch) => void, matchKey: string): Promise<RoundMatch> {
     const isHome = home === myTeamName;
     const opponent = isHome ? away : home;
     const { firstHalf, simulateSecondHalf } = beginPlayoffMatch(teamRating, { opponent, isHome }, selectedPlayers);
@@ -185,6 +170,7 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
     setOvDone(true);
     await delay(2000);
     setOverlay(false);
+    setMyMatchEvents(prev => ({ ...prev, [matchKey]: allEventsRef.current }));
 
     const homeScore = isHome ? rawMy : rawOpp;
     const awayScore = isHome ? rawOpp : rawMy;
@@ -202,11 +188,11 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
     const qf2HasMe = t4 === myTeamName || t5 === myTeamName;
     if (qf1HasMe) {
       await revealOther("qf2", simOther(t4, t5), setQf2);
-      const r = await revealMyMatch(t3, t6, setQf1);
+      const r = await revealMyMatch(t3, t6, setQf1, "qf1");
       if (r.winner !== myTeamName) setEliminatedIn("Quarts de finale");
     } else if (qf2HasMe) {
       await revealOther("qf1", simOther(t3, t6), setQf1);
-      const r = await revealMyMatch(t4, t5, setQf2);
+      const r = await revealMyMatch(t4, t5, setQf2, "qf2");
       if (r.winner !== myTeamName) setEliminatedIn("Quarts de finale");
     } else {
       await revealOther("qf1", simOther(t3, t6), setQf1);
@@ -225,11 +211,11 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
     const sf2HasMe = sf2Home === myTeamName || sf2Away === myTeamName;
     if (sf1HasMe) {
       await revealOther("sf2", simOther(sf2Home, sf2Away), setSf2);
-      const r = await revealMyMatch(sf1Home, sf1Away, setSf1);
+      const r = await revealMyMatch(sf1Home, sf1Away, setSf1, "sf1");
       if (r.winner !== myTeamName) setEliminatedIn("Demi-finales");
     } else if (sf2HasMe) {
       await revealOther("sf1", simOther(sf1Home, sf1Away), setSf1);
-      const r = await revealMyMatch(sf2Home, sf2Away, setSf2);
+      const r = await revealMyMatch(sf2Home, sf2Away, setSf2, "sf2");
       if (r.winner !== myTeamName) setEliminatedIn("Demi-finales");
     } else {
       await revealOther("sf1", simOther(sf1Home, sf1Away), setSf1);
@@ -246,7 +232,7 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
     const finalHasMe = fHome === myTeamName || fAway === myTeamName;
     let winner: string;
     if (finalHasMe) {
-      const r = await revealMyMatch(fHome, fAway, setFinalMatch);
+      const r = await revealMyMatch(fHome, fAway, setFinalMatch, "finale");
       winner = r.winner;
     } else {
       const r = simOther(fHome, fAway);
@@ -255,7 +241,7 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
     }
     setPhase("done");
     setSimulating(false);
-    if (winner === myTeamName) setTimeout(() => setShowConfetti(true), 300);
+    if (winner === myTeamName) setTimeout(() => setShowChampionAnim(true), 300);
   }
 
   function handleSimulate() {
@@ -311,7 +297,7 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
   /* ── render ──────────────────────────────────────────────── */
   return (
     <main className={`min-h-screen ${G.pageBg} ${G.text} flex flex-col`}>
-      {showConfetti && <ConfettiOverlay />}
+      {showChampionAnim && <GoldenFlashAnimation />}
 
       {overlay && (
         <PlayoffMatchOverlay
@@ -347,6 +333,15 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
       <div className="flex-1 overflow-y-auto">
         <div className="px-5 lg:px-8 py-6 space-y-5 max-w-xl lg:max-w-2xl mx-auto">
 
+          {/* How to play */}
+          {phase === "qf" && !simulating && (
+            <div className="border-l-2 border-c-gold/40 pl-3">
+              <p className={`${G.gold} uppercase tracking-[0.3em] text-[8px] font-bold mb-2`}>Comment jouer</p>
+              <p className="text-white/70 text-[11px] leading-relaxed">Les 3e-6e s&apos;affrontent en quarts de finale. Les 1er et 2e sont qualifiés directement en demi-finale.</p>
+              <p className={`${G.textFaint} text-[10px] mt-1.5`}>Tes matchs se jouent en immersif avec choix tactique à la mi-temps. Appuie sur &quot;Simuler&quot; pour lancer la phase.</p>
+            </div>
+          )}
+
           {/* Phase progress */}
           {phase !== "done" && (
             <div className="flex items-center gap-3">
@@ -367,7 +362,9 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
               phase === "qf" ? "text-c-gold" : G.textMuted
             }`}>Quarts de finale</p>
             <GoldMatchCard matchKey="qf1" home={t3} away={t6} result={qf1} myTeam={myTeamName} flashKey={flashKey} />
+            <MatchEventToggle matchKey="qf1" events={myMatchEvents} isHome={t3 === myTeamName} expanded={expandedMatchKey} onToggle={setExpandedMatchKey} />
             <GoldMatchCard matchKey="qf2" home={t4} away={t5} result={qf2} myTeam={myTeamName} flashKey={flashKey} />
+            <MatchEventToggle matchKey="qf2" events={myMatchEvents} isHome={t4 === myTeamName} expanded={expandedMatchKey} onToggle={setExpandedMatchKey} />
           </section>
 
           <GoldFlowArrow dim={phase !== "sf" && phase !== "final" && phase !== "done"} />
@@ -378,7 +375,9 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
               phase === "sf" ? "text-c-gold" : phase === "final" || phase === "done" ? G.textMuted : G.textFaint
             }`}>Demi-finales</p>
             <GoldMatchCard matchKey="sf1" home={t1} away={qf1 ? qf1.winner : "Vainqueur QF1"} homeNote="Qualif. directe" result={sf1} myTeam={myTeamName} flashKey={flashKey} dim={phase === "qf"} />
+            <MatchEventToggle matchKey="sf1" events={myMatchEvents} isHome={t1 === myTeamName} expanded={expandedMatchKey} onToggle={setExpandedMatchKey} />
             <GoldMatchCard matchKey="sf2" home={t2} away={qf2 ? qf2.winner : "Vainqueur QF2"} homeNote="Qualif. directe" result={sf2} myTeam={myTeamName} flashKey={flashKey} dim={phase === "qf"} />
+            <MatchEventToggle matchKey="sf2" events={myMatchEvents} isHome={t2 === myTeamName} expanded={expandedMatchKey} onToggle={setExpandedMatchKey} />
           </section>
 
           <GoldFlowArrow dim={phase !== "final" && phase !== "done"} />
@@ -395,6 +394,7 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
               result={finalMatch} myTeam={myTeamName} flashKey={flashKey}
               dim={phase === "qf" || phase === "sf"} isFinal
             />
+            <MatchEventToggle matchKey="finale" events={myMatchEvents} isHome={sf1?.winner === myTeamName} expanded={expandedMatchKey} onToggle={setExpandedMatchKey} />
           </section>
 
           {/* Champion */}
@@ -519,7 +519,7 @@ function PlayoffMatchOverlay({ myTeamName, opponent, isHome, minute, myScore, op
                 const isMe = event.team === "me";
                 const isTry = event.text.startsWith("Essai");
                 const scorerName = event.text.replace(/^Essai de /, "");
-                const lastName = scorerName.includes(" ") ? scorerName.split(" ").slice(1).join(" ") : scorerName;
+                const lastName = (scorerName.includes(" ") ? scorerName.split(" ").slice(1).join(" ") : scorerName).toUpperCase();
                 const label = isTry ? (isMe ? `🏉 ${lastName}` : "🏉 Essai adverse") : event.text;
                 const isLeft = isHome ? isMe : !isMe;
                 return (
@@ -586,9 +586,12 @@ function HalftimeModal({ myScore, oppScore, myTeamName, opponent, isHome, onChoi
           <p className="text-white font-black text-3xl tabular-nums leading-tight">
             {leftName} <span className="text-c-gold">{leftScore}–{rightScore}</span> {rightName}
           </p>
-          <p className={`${G.textMuted} text-[10px] uppercase tracking-[0.3em] mt-2`}>
-            Choisissez votre tactique
-          </p>
+        </div>
+
+        {/* How to play */}
+        <div className="border-l-2 border-c-gold/40 pl-3">
+          <p className={`${G.gold} uppercase tracking-[0.3em] text-[8px] font-bold mb-1.5`}>Comment jouer</p>
+          <p className="text-white/70 text-[11px] leading-relaxed">Analyse le score de la 1re mi-temps et choisis ta stratégie pour la 2e. Ce choix impacte les probabilités de marquer et d&apos;encaisser des points.</p>
         </div>
 
         {/* 2×2 grid of choices */}
@@ -609,10 +612,6 @@ function HalftimeModal({ myScore, oppScore, myTeamName, opponent, isHome, onChoi
             </button>
           ))}
         </div>
-
-        <p className={`${G.textFaint} text-[8px] text-center uppercase tracking-wider`}>
-          Ce choix affecte les probabilités en 2e mi-temps
-        </p>
       </div>
     </div>
   );
@@ -683,6 +682,58 @@ function GoldMatchCard({ matchKey, home, away, homeNote, result, myTeam, flashKe
           </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── Match event toggle (for completed matches) ──────────────── */
+
+interface MatchEventToggleProps {
+  matchKey: string;
+  events: Record<string, MatchEvent[]>;
+  isHome: boolean;
+  expanded: string | null;
+  onToggle: (key: string | null) => void;
+}
+
+function MatchEventToggle({ matchKey, events, isHome, expanded, onToggle }: MatchEventToggleProps) {
+  const list = events[matchKey];
+  if (!list || list.length === 0) return null;
+  const open = expanded === matchKey;
+
+  return (
+    <div className={`border-l-2 border-c-gold/25 ml-1 transition-all`}>
+      <button
+        onClick={() => onToggle(open ? null : matchKey)}
+        className={`w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-c-gold/4 transition-colors`}
+      >
+        <span className={`text-[8px] font-black uppercase tracking-[0.25em] ${open ? "text-c-gold/70" : G.textFaint}`}>
+          {open ? "▴" : "▾"} Voir détail du score
+        </span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 max-h-52 overflow-y-auto space-y-1">
+          {[...list].reverse().map((event, i) => {
+            const isMe = event.team === "me";
+            const isTry = event.text.startsWith("Essai");
+            const scorerName = event.text.replace(/^Essai de /, "");
+            const lastName = scorerName.includes(" ") ? scorerName.split(" ").slice(1).join(" ") : scorerName;
+            const label = isTry ? (isMe ? `🏉 ${lastName}` : "🏉 Essai adverse") : event.text;
+            const isLeft = isHome ? isMe : !isMe;
+            return (
+              <div key={i} className="grid grid-cols-[1fr_36px_1fr] items-center gap-1">
+                <span className={`text-[9px] uppercase tracking-wider font-black truncate text-right ${isLeft ? (isMe ? "text-c-gold/80" : "text-white/40") : "text-transparent"}`}>
+                  {isLeft ? label : ""}
+                </span>
+                <span className={`${G.textFaint} text-[8px] font-bold text-center tabular-nums`}>{event.minute}&apos;</span>
+                <span className={`text-[9px] uppercase tracking-wider font-black truncate ${!isLeft ? (isMe ? "text-c-gold/80" : "text-white/40") : "text-transparent"}`}>
+                  {!isLeft ? label : ""}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

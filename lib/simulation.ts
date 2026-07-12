@@ -3,6 +3,29 @@ import { getClubRating, teamStrengths } from "./data";
 
 const HOME_BONUS = 7;
 
+const POSITION_TRY_WEIGHT: Record<string, number> = {
+  "Ailier":          10,
+  "Centre":           7,
+  "Arrière":          5,
+  "Demi de mêlée":    3,
+  "Ouvreur":          3,
+  "Numéro 8":         2,
+  "Troisième ligne":  1.5,
+  "Deuxième ligne":   0.8,
+  "Pilier gauche":    0.4,
+  "Pilier droit":     0.4,
+  "Talonneur":        0.3,
+};
+
+function buildWeightedScorers(players: Player[]): string[] {
+  const weighted: string[] = [];
+  for (const p of players) {
+    const w = Math.max(1, Math.round((POSITION_TRY_WEIGHT[p.position] ?? 1) * 2));
+    for (let i = 0; i < w; i++) weighted.push(p.name);
+  }
+  return weighted;
+}
+
 function getTeamStrength(clubName: string): number {
   return teamStrengths[clubName] ?? getClubRating(clubName);
 }
@@ -160,7 +183,7 @@ export function simulateMatch(
 
   let myScore = actionsToScore(myActions);
   let opponentScore = actionsToScore(oppActions);
-  const events = buildEvents(myActions, oppActions, selectedPlayers.map((p) => p.name));
+  const events = buildEvents(myActions, oppActions, buildWeightedScorers(selectedPlayers));
 
   // Draws are very rare in rugby (~1-2%). Break 88% of ties with a last-kick penalty.
   if (myScore === opponentScore && Math.random() < 0.88) {
@@ -247,7 +270,7 @@ export function beginPlayoffMatch(
   const oppEffective = opponentRating + (entry.isHome ? 0 : HOME_BONUS);
 
   const [myTotal, oppTotal] = buildMatchCounts(myEffective, oppEffective);
-  const scorers = selectedPlayers.map((p) => p.name);
+  const scorers = buildWeightedScorers(selectedPlayers);
 
   // Split total actions into halves (~43% first, ~57% second)
   const myH1 = Math.max(0, Math.round(myTotal * 0.43 + (Math.random() - 0.5)));

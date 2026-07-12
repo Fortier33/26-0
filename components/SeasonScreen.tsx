@@ -218,6 +218,17 @@ export function SeasonScreen({
       {activeTab === "matchs" && (
         <div className="flex-1 overflow-y-auto">
 
+          {/* How to play */}
+          {played === 0 && !isRunning && (
+            <div className="px-5 lg:px-8 pt-4 pb-1">
+              <div className="border-l-2 border-c-gold/50 pl-3">
+                <p className="text-c-gold uppercase tracking-[0.3em] text-[8px] font-bold mb-2">Comment jouer</p>
+                <p className="text-c-fg/80 text-[11px] leading-relaxed">Lance chaque match un par un et suis ton équipe en temps réel. Ton équipe dispute 26 journées de championnat.</p>
+                <p className="text-[var(--c-muted)] text-[10px] mt-1.5">Termine dans le top 6 pour accéder aux play-offs. Les 1er et 2e sont qualifiés directement en demi-finale.</p>
+              </div>
+            </div>
+          )}
+
           {/* Speed selector */}
           <div className="px-5 lg:px-8 pt-4 pb-3 flex items-center gap-3">
             <span className="text-[var(--c-faint)] uppercase tracking-[0.2em] text-[8px] font-bold shrink-0">
@@ -438,7 +449,7 @@ function ActiveMatchCard({
         {!isRunning ? (
           <>
             <button onClick={onStart}
-              className="flex-1 bg-c-gold hover:bg-[#F5F0E8] text-black font-black uppercase tracking-[0.2em] text-xs py-3 transition-colors">
+              className="flex-1 bg-c-gold hover:bg-[#F5F0E8] active:bg-c-gold focus:bg-c-gold text-black font-black uppercase tracking-[0.2em] text-xs py-3 transition-colors">
               Démarrer →
             </button>
             <button onClick={onSkip} title="Simuler sans regarder"
@@ -454,7 +465,7 @@ function ActiveMatchCard({
                 : "border-[var(--c-border)] text-[var(--c-muted)] hover:border-c-gold/30 hover:text-c-fg"
             }`}>
             <span>{eventsOpen ? "▴" : "▾"}</span>
-            <span>Événements</span>
+            <span>Voir détail du score</span>
           </button>
         )}
       </div>
@@ -561,7 +572,7 @@ function MatchEventsList({ events, isHome, reversed = false }: {
         const isMe = event.team === "me";
         const isTry = event.text.startsWith("Essai");
         const scorerName = event.text.replace(/^Essai de /, "");
-        const lastName = scorerName.includes(" ") ? scorerName.split(" ").slice(1).join(" ") : scorerName;
+        const lastName = (scorerName.includes(" ") ? scorerName.split(" ").slice(1).join(" ") : scorerName).toUpperCase();
         const label = isTry ? (isMe ? `🏉 ${lastName}` : "🏉 Essai adv.") : event.text;
         const isLeft = isHome ? isMe : !isMe;
         return (

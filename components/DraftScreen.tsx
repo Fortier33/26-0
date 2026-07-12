@@ -12,8 +12,8 @@ const SPIN_POOL = [...new Set(
 
 function abbreviateName(fullName: string): string {
   const parts = fullName.trim().split(/\s+/);
-  if (parts.length < 2) return fullName;
-  return `${parts[0][0]}.${parts.slice(1).join(" ")}`;
+  if (parts.length < 2) return fullName.toUpperCase();
+  return `${parts[0][0].toUpperCase()}.${parts.slice(1).join(" ").toUpperCase()}`;
 }
 
 interface DraftScreenProps {
@@ -309,12 +309,19 @@ function LeftPanel({
             </button>
           </div>
         ) : awaitingNewClub ? (
-          <div className="p-5 lg:p-6">
+          <div className="p-5 lg:p-6 space-y-4">
+            {!isDraftStarted && (
+              <div className="border-l-2 border-c-gold/50 pl-3">
+                <p className="text-c-gold uppercase tracking-[0.3em] text-[8px] font-bold mb-2">Comment jouer</p>
+                <p className="text-c-fg/80 text-[11px] leading-relaxed">Un club est tiré au sort parmi toute l&apos;histoire du TOP 14. Sélectionne un joueur de cet effectif pour l&apos;intégrer à ton XV.</p>
+                <p className="text-[var(--c-muted)] text-[10px] mt-1.5 leading-relaxed">3 relances disponibles par tirage : même club autre saison, ou autre club même saison. Construis un effectif complet de 15 joueurs pour lancer ta saison.</p>
+              </div>
+            )}
             <button
               onClick={onNewClub}
               className="w-full bg-c-gold hover:bg-[#F5F0E8] text-black font-black uppercase tracking-[0.2em] text-sm py-4 transition-colors"
             >
-              {isDraftStarted ? "↻ Nouvelle équipe" : "Commencer le choix des joueurs →"}
+              {isDraftStarted ? "↻ Nouvelle équipe" : "Commencer le draft →"}
             </button>
           </div>
         ) : isSpinning ? null : (

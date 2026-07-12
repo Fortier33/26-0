@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { clubs, MAX_BY_POSITION } from "@/lib/data";
+import { clubs } from "@/lib/data";
 import type { Player } from "@/lib/types";
 
 /* ── Steel-blue palette ───────────────────────────────────────────
@@ -17,22 +17,37 @@ const S = {
   borderHi: "rgba(143,175,200,0.45)",
 };
 
-const SPIN_POOL = [...new Set(
-  Object.keys(clubs).map((n) => n.replace(/\s\d{2}-\d{2}$/, ""))
-)];
-
-function getClubAndSeason(key: string) {
-  const season = key.match(/\d{2}-\d{2}$/)![0];
-  const club = key.slice(0, key.length - season.length - 1);
-  return { club, season };
-}
 function abbreviateName(name: string) {
   const p = name.trim().split(/\s+/);
-  return p.length < 2 ? name : `${p[0][0]}.${p.slice(1).join(" ")}`;
+  return p.length < 2 ? name.toUpperCase() : `${p[0][0].toUpperCase()}.${p.slice(1).join(" ").toUpperCase()}`;
 }
-function randomKey(exclude: Set<string> = new Set()) {
-  const keys = Object.keys(clubs).filter((k) => !exclude.has(k));
-  return keys[Math.floor(Math.random() * keys.length)];
+
+function getRatingCap(position: number, season: number): number {
+  const base = position <= 2 ? 92 : position <= 6 ? 90 : position <= 12 ? 87 : 85;
+  return Math.min(99, base + (season - 1) * 3);
+}
+
+interface CatalogPlayer {
+  name: string;
+  position: string;
+  rating: number;
+  clubName: string;
+  season: string;
+  clubKey: string;
+}
+
+function buildCatalog(): CatalogPlayer[] {
+  const catalog: CatalogPlayer[] = [];
+  for (const [key, players] of Object.entries(clubs)) {
+    const seasonMatch = key.match(/\d{2}-\d{2}$/);
+    if (!seasonMatch) continue;
+    const season = seasonMatch[0];
+    const clubName = key.slice(0, key.length - season.length - 1);
+    for (const p of players) {
+      catalog.push({ name: p.name, position: p.position, rating: p.rating, clubName, season, clubKey: key });
+    }
+  }
+  return catalog;
 }
 
 const POSITION_ORDER = [
@@ -43,10 +58,12 @@ const POSITION_ORDER = [
 
 interface Props {
   selectedPlayers: Player[];
+  seasonNumber: number;
+  myFinalPosition: number;
   onComplete: (newPlayers: Player[]) => void;
 }
 
-export function MercatoScreen({ selectedPlayers, onComplete }: Props) {
+export function MercatoScreen({ selectedPlayers, seasonNumber, myFinalPosition, onComplete }: Props) {
   const [phase, setPhase] = useState<"release" | "recruit" | "progress">("release");
   const [actOverlay, setActOverlay] = useState<{ text: string; act: number } | null>(
     { text: "DÉPARTS", act: 1 }
@@ -55,7 +72,8 @@ export function MercatoScreen({ selectedPlayers, onComplete }: Props) {
   const [squadForProgress, setSquadForProgress] = useState<Player[]>(selectedPlayers);
 
   const remainingPlayers = selectedPlayers.filter((_, i) => !releasedIndices.has(i));
-  const slotsNeeded = releasedIndices.size;
+  const releasedPositions = selectedPlayers.filter((_, i) => releasedIndices.has(i)).map(p => p.position);
+  const ratingCap = getRatingCap(myFinalPosition || 14, seasonNumber);
 
   function toggleRelease(i: number) {
     setReleasedIndices((prev) => {
@@ -66,7 +84,7 @@ export function MercatoScreen({ selectedPlayers, onComplete }: Props) {
   }
 
   function handleConfirmReleases() {
-    if (slotsNeeded === 0) {
+    if (releasedPositions.length === 0) {
       setSquadForProgress(selectedPlayers);
       setPhase("progress");
       setActOverlay({ text: "PRÉ-SAISON", act: 3 });
@@ -103,7 +121,9 @@ export function MercatoScreen({ selectedPlayers, onComplete }: Props) {
         {phase === "recruit" && (
           <RecruitPhase
             remainingPlayers={remainingPlayers}
-            slotsNeeded={slotsNeeded}
+            releasedPositions={releasedPositions}
+            ratingCap={ratingCap}
+            myFinalPosition={myFinalPosition || 14}
             onDone={handleRecruitDone}
           />
         )}
@@ -360,124 +380,85 @@ function ReleasePhase({ players, releasedIndices, onToggle, onConfirm }: {
 
 /* ── Phase 2 : Recrutement ───────────────────────────────────────── */
 
-function RecruitPhase({ remainingPlayers, slotsNeeded, onDone }: {
+function RecruitPhase({ remainingPlayers, releasedPositions, ratingCap, myFinalPosition, onDone }: {
   remainingPlayers: Player[];
-  slotsNeeded: number;
+  releasedPositions: string[];
+  ratingCap: number;
+  myFinalPosition: number;
   onDone: (players: Player[]) => void;
 }) {
   const [recruited, setRecruited] = useState<Player[]>([]);
-  const [currentClub, setCurrentClub] = useState(() => randomKey());
-  const [awaitingNewClub, setAwaitingNewClub] = useState(true);
-  const [sameClubRerolls, setSameClubRerolls] = useState(3);
-  const [sameSeasonRerolls, setSameSeasonRerolls] = useState(3);
-  const [shownClubs, setShownClubs] = useState<Set<string>>(new Set());
-
+  const currentSlot = recruited.length;
+  const done = currentSlot >= releasedPositions.length;
   const squadSoFar = [...remainingPlayers, ...recruited];
-  const done = recruited.length >= slotsNeeded;
+  const currentPosition = releasedPositions[currentSlot];
 
-  const hasOtherSeasons = (() => {
-    const { club } = getClubAndSeason(currentClub);
-    return Object.keys(clubs).some((k) => getClubAndSeason(k).club === club && k !== currentClub);
-  })();
+  const catalog = buildCatalog();
+  const eligible = done ? [] : catalog
+    .filter(cp =>
+      cp.position === currentPosition &&
+      cp.rating <= ratingCap &&
+      !squadSoFar.some(sp => sp.name === cp.name)
+    )
+    .sort((a, b) => b.rating - a.rating);
 
-  const currentPlayers = (clubs[currentClub] ?? []).filter(
-    (p) => !squadSoFar.some((sp) => sp.name === p.name)
-  );
-
-  function handleRerollSameClub() {
-    if (sameClubRerolls <= 0) return;
-    const { club } = getClubAndSeason(currentClub);
-    const next = new Set([...shownClubs, currentClub]);
-    const opts = Object.keys(clubs).filter((k) => getClubAndSeason(k).club === club && !next.has(k));
-    if (!opts.length) return;
-    setCurrentClub(opts[Math.floor(Math.random() * opts.length)]);
-    setShownClubs(next); setSameClubRerolls((n) => n - 1);
+  function handleSelectPlayer(cp: CatalogPlayer) {
+    setRecruited([...recruited, { name: cp.name, position: cp.position, rating: cp.rating, club: cp.clubKey }]);
   }
 
-  function handleRerollSameSeason() {
-    if (sameSeasonRerolls <= 0) return;
-    const { season } = getClubAndSeason(currentClub);
-    const next = new Set([...shownClubs, currentClub]);
-    const opts = Object.keys(clubs).filter((k) => getClubAndSeason(k).season === season && !next.has(k));
-    if (!opts.length) return;
-    setCurrentClub(opts[Math.floor(Math.random() * opts.length)]);
-    setShownClubs(next); setSameSeasonRerolls((n) => n - 1);
-  }
+  const posRange = myFinalPosition <= 2 ? "1er-2e"
+    : myFinalPosition <= 6 ? "3e-6e"
+    : myFinalPosition <= 12 ? "7e-12e"
+    : "13e-14e";
+  const instructionLines = [
+    "Continue à construire ton XV de légende en recrutant parmi les meilleurs joueurs de l'histoire du TOP 14.",
+    `Classement ${posRange} la saison dernière = note maximale pour recruter : ${ratingCap}.`,
+  ];
 
-  function handleSelectPlayer(player: Player) {
-    const next = [...recruited, { ...player, club: currentClub }];
-    setRecruited(next);
-    if (next.length < slotsNeeded) {
-      setShownClubs(new Set()); setCurrentClub(randomKey()); setAwaitingNewClub(true);
-    }
-  }
-
-  const season = currentClub.match(/\s(\d{2}-\d{2})$/)?.[1] ?? null;
-  const clubDisplayName = currentClub.replace(/\s\d{2}-\d{2}$/, "");
-
-  return (
-    <div className="flex flex-col" style={{ minHeight: "100svh" }}>
-      <PhaseHeader title="Recrute tes remplaçants" step="Acte II · Recrutement" />
-      <InstructionBox lines={[
-        `Pour chaque recrutement, un club est tiré au sort. Choisis un joueur parmi ceux proposés.`,
-        "Tu as 3 relances disponibles par recrutement.",
-      ]} />
-
-      {recruited.length > 0 && (
-        <div style={{ borderBottom: `1px solid ${S.border}`, padding: "8px 20px", flexShrink: 0, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          {recruited.map((p, i) => (
-            <span key={i} style={{ fontSize: 9, fontWeight: 900, textTransform: "uppercase", color: S.accent, background: "rgba(143,175,200,0.1)", padding: "3px 8px" }}>
-              {p.name.split(" ").at(-1)} · {p.rating}
-            </span>
-          ))}
-          <span style={{ fontSize: 9, color: S.faint, textTransform: "uppercase", letterSpacing: "0.2em" }}>
-            {recruited.length}/{slotsNeeded} recrues
-          </span>
-        </div>
-      )}
-
-      {done ? (
+  if (done) {
+    return (
+      <div className="flex flex-col" style={{ minHeight: "100svh" }}>
+        <PhaseHeader title="Recrute tes remplaçants" step="Acte II · Recrutement" />
         <div className="flex-1 flex flex-col items-center justify-center px-5 gap-6">
           <div className="text-center">
             <p style={{ color: S.accent, fontSize: 13, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.3em", marginBottom: 8 }}>
               Recrutement terminé
             </p>
             <p style={{ color: S.muted, fontSize: 12 }}>
-              {slotsNeeded} recrue{slotsNeeded > 1 ? "s" : ""} intégrée{slotsNeeded > 1 ? "s" : ""}{" "}à l&apos;effectif
+              {releasedPositions.length} recrue{releasedPositions.length > 1 ? "s" : ""} intégrée{releasedPositions.length > 1 ? "s" : ""} à l&apos;effectif
             </p>
           </div>
+          {recruited.length > 0 && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+              {recruited.map((p, i) => (
+                <span key={i} style={{ fontSize: 9, fontWeight: 900, textTransform: "uppercase", color: S.accent, background: "rgba(143,175,200,0.1)", padding: "3px 8px" }}>
+                  ✓ {p.name.split(" ").at(-1)} · {p.rating}
+                </span>
+              ))}
+            </div>
+          )}
           <div className="w-full max-w-sm">
             <PrimaryButton onClick={() => onDone([...remainingPlayers, ...recruited])}>
               Passer à la pré-saison →
             </PrimaryButton>
           </div>
         </div>
-      ) : awaitingNewClub ? (
-        <div className="flex-1 flex flex-col items-center justify-center px-5 gap-5">
-          <p style={{ color: S.muted, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.35em" }}>
-            Recrue {recruited.length + 1} / {slotsNeeded}
-          </p>
-          <div className="w-full max-w-sm">
-            <PrimaryButton onClick={() => { setCurrentClub(randomKey(shownClubs)); setAwaitingNewClub(false); }}>
-              Tirer un club →
-            </PrimaryButton>
-          </div>
-        </div>
-      ) : (
-        <MercatoClubDraft
-          clubDisplayName={clubDisplayName}
-          season={season}
-          players={currentPlayers}
-          squadSoFar={squadSoFar}
-          sameClubRerolls={sameClubRerolls}
-          sameSeasonRerolls={sameSeasonRerolls}
-          hasOtherSeasons={hasOtherSeasons}
-          slotLabel={`Recrue ${recruited.length + 1} / ${slotsNeeded}`}
-          onSelectPlayer={handleSelectPlayer}
-          onRerollSameClub={handleRerollSameClub}
-          onRerollSameSeason={handleRerollSameSeason}
-        />
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col" style={{ minHeight: "100svh" }}>
+      <PhaseHeader title="Recrute tes remplaçants" step="Acte II · Recrutement" />
+      <InstructionBox lines={instructionLines} />
+      <RecruitCatalogView
+        position={currentPosition}
+        slotLabel={`Recrue ${currentSlot + 1} / ${releasedPositions.length}`}
+        ratingCap={ratingCap}
+        candidates={eligible}
+        recruited={recruited}
+        onSelectPlayer={handleSelectPlayer}
+      />
     </div>
   );
 }
@@ -570,114 +551,72 @@ function ProgressPhase({ players, onConfirm }: {
   );
 }
 
-/* ── Club draw (Recrutement) ─────────────────────────────────────── */
+/* ── Catalog view (Recrutement) ──────────────────────────────────── */
 
-function MercatoClubDraft({ clubDisplayName, season, players, squadSoFar, sameClubRerolls, sameSeasonRerolls, hasOtherSeasons, slotLabel, onSelectPlayer, onRerollSameClub, onRerollSameSeason }: {
-  clubDisplayName: string; season: string | null; players: Player[]; squadSoFar: Player[];
-  sameClubRerolls: number; sameSeasonRerolls: number; hasOtherSeasons: boolean; slotLabel: string;
-  onSelectPlayer: (p: Player) => void; onRerollSameClub: () => void; onRerollSameSeason: () => void;
+function RecruitCatalogView({ position, slotLabel, ratingCap, candidates, recruited, onSelectPlayer }: {
+  position: string;
+  slotLabel: string;
+  ratingCap: number;
+  candidates: CatalogPlayer[];
+  recruited: Player[];
+  onSelectPlayer: (cp: CatalogPlayer) => void;
 }) {
-  const [isSpinning, setIsSpinning] = useState(true);
-  const [spinName, setSpinName] = useState(clubDisplayName);
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-
-  useEffect(() => {
-    timers.current.forEach(clearTimeout); timers.current = [];
-    const pool = SPIN_POOL.filter((n) => n !== clubDisplayName);
-    setIsSpinning(true);
-    const sched: [number, string | null][] = [];
-    let t = 0;
-    for (let i = 0; i < 10; i++) { t += 65; sched.push([t, pool[Math.floor(Math.random() * pool.length)]]); }
-    for (let i = 0; i < 4; i++) { t += 120; sched.push([t, pool[Math.floor(Math.random() * pool.length)]]); }
-    for (let i = 0; i < 3; i++) { t += 200; sched.push([t, pool[Math.floor(Math.random() * pool.length)]]); }
-    sched.push([t + 220, null]);
-    for (const [delay, name] of sched) {
-      const id = setTimeout(() => {
-        if (name === null) { setSpinName(clubDisplayName); setIsSpinning(false); }
-        else setSpinName(name);
-      }, delay);
-      timers.current.push(id);
-    }
-    return () => { timers.current.forEach(clearTimeout); };
-  }, [clubDisplayName]);
-
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
-      {/* Club header */}
-      <div style={{ padding: "16px 20px", borderBottom: `1px solid ${S.border}`, flexShrink: 0 }}>
+      {/* Position header */}
+      <div style={{ padding: "14px 20px", borderBottom: `1px solid ${S.border}`, flexShrink: 0 }}>
         <p style={{ color: S.faint, fontSize: 9, fontWeight: 700, letterSpacing: "0.3em", textTransform: "uppercase", marginBottom: 4 }}>{slotLabel}</p>
-        <h2 style={{
-          fontSize: 18, fontWeight: 900, lineHeight: 1.2,
-          color: isSpinning ? "rgba(143,175,200,0.45)" : S.text,
-          transition: "color 0.15s",
-        }}>
-          {spinName}
-        </h2>
-        {!isSpinning && season && (
-          <p style={{ color: S.accent, fontSize: 10, fontStyle: "italic", marginTop: 3 }}>Saison {season}</p>
-        )}
-        {!isSpinning && (
-          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", gap: 8 }}>
-              {[
-                { label: "↻ Même club, autre saison", onClick: onRerollSameClub, disabled: !hasOtherSeasons || sameClubRerolls <= 0, count: sameClubRerolls },
-                { label: "↻ Autre club, même saison", onClick: onRerollSameSeason, disabled: sameSeasonRerolls <= 0, count: sameSeasonRerolls },
-              ].map(({ label, onClick, disabled, count }) => (
-                <button
-                  key={label}
-                  onClick={onClick}
-                  disabled={disabled}
-                  style={{
-                    flex: 1, border: `1px solid ${disabled ? S.border : S.borderHi}`,
-                    color: disabled ? S.faint : S.accent,
-                    fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em",
-                    padding: "6px 4px", cursor: disabled ? "not-allowed" : "pointer",
-                    background: "transparent", transition: "border-color 0.15s",
-                  }}
-                >
-                  {label} · {count}/3
-                </button>
-              ))}
-            </div>
+        <h2 style={{ fontSize: 18, fontWeight: 900, lineHeight: 1.2, color: S.text }}>{position}</h2>
+        <p style={{ color: S.accent, fontSize: 10, marginTop: 4 }}>
+          Note max : <strong>{ratingCap}</strong>
+          <span style={{ color: S.faint }}> · {candidates.length} joueur{candidates.length !== 1 ? "s" : ""} disponible{candidates.length !== 1 ? "s" : ""}</span>
+        </p>
+        {recruited.length > 0 && (
+          <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {recruited.map((p, i) => (
+              <span key={i} style={{ fontSize: 9, fontWeight: 900, textTransform: "uppercase", color: S.accent, background: "rgba(143,175,200,0.1)", padding: "3px 8px" }}>
+                ✓ {p.name.split(" ").at(-1)} · {p.rating}
+              </span>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Player list */}
+      {/* Column header */}
+      <div style={{ padding: "7px 20px", borderBottom: `1px solid ${S.border}`, display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+        <span style={{ flex: 1, fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.35em", color: S.faint }}>Joueur — Club — Saison</span>
+        <span style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.35em", color: S.faint }}>Note</span>
+      </div>
+
+      {/* Scrollable list */}
       <div className="flex-1 overflow-y-auto">
-        {!isSpinning && (
-          <>
-            <div style={{ padding: "10px 20px", borderBottom: `1px solid ${S.border}` }}>
-              <p style={{ color: S.muted, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.35em" }}>
-                Choisis un joueur
-              </p>
-            </div>
-            {players.map((player) => {
-              const count = squadSoFar.filter((sp) => sp.position === player.position).length;
-              const full = count >= (MAX_BY_POSITION[player.position] ?? 1);
-              return (
-                <button
-                  key={player.name}
-                  disabled={full}
-                  onClick={() => onSelectPlayer(player)}
-                  style={{
-                    width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "10px 20px", borderBottom: `1px solid ${S.border}`,
-                    background: "transparent", cursor: full ? "not-allowed" : "pointer",
-                    opacity: full ? 0.25 : 1, textAlign: "left", transition: "background 0.1s",
-                  }}
-                  onMouseEnter={e => { if (!full) (e.currentTarget as HTMLButtonElement).style.background = "rgba(143,175,200,0.05)"; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
-                >
-                  <div>
-                    <p style={{ fontWeight: 900, fontSize: 11, color: S.text }}>{abbreviateName(player.name)}</p>
-                    <p style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.25em", color: S.faint, marginTop: 2 }}>{player.position}</p>
-                  </div>
-                  <PlayerBadge rating={player.rating} />
-                </button>
-              );
-            })}
-          </>
+        {candidates.length === 0 ? (
+          <div style={{ padding: "40px 20px", textAlign: "center" }}>
+            <p style={{ color: S.muted, fontSize: 12 }}>Aucun joueur disponible pour ce poste avec le cap actuel.</p>
+          </div>
+        ) : (
+          candidates.map((cp) => (
+            <button
+              key={`${cp.clubKey}-${cp.name}`}
+              onClick={() => onSelectPlayer(cp)}
+              style={{
+                width: "100%", display: "flex", alignItems: "center", gap: 12,
+                padding: "10px 20px", borderBottom: `1px solid ${S.border}`,
+                background: "transparent", cursor: "pointer", textAlign: "left",
+                transition: "background 0.1s",
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(143,175,200,0.05)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontWeight: 900, fontSize: 11, color: S.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {abbreviateName(cp.name)}
+                  <span style={{ color: S.faint, fontWeight: 400 }}> — {cp.clubName} — {cp.season}</span>
+                </p>
+              </div>
+              <PlayerBadge rating={cp.rating} />
+            </button>
+          ))
         )}
       </div>
     </div>
