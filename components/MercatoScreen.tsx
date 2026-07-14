@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { ScreenTransition } from "@/components/ScreenTransition";
 import { clubs } from "@/lib/data";
-import type { Player } from "@/lib/types";
+import {
+  formatBudget, getMarketValue, getRecruiterDiscount, getTrainerBoost,
+  nextUpgradeCost, UPGRADE_LABELS, UPGRADE_GRADE_DESCRIPTIONS,
+} from "@/lib/budget";
+import type { ClubUpgrade, Player, UpgradeGrades } from "@/lib/types";
 
-/* ── Steel-blue palette ───────────────────────────────────────────
-   All mercato UI uses these so it stays cold regardless of theme.  */
+/* ── Steel-blue palette ───────────────────────────────────────────── */
 const S = {
   bg:       "#04060F",
   bgCard:   "#060A14",
@@ -17,6 +21,8 @@ const S = {
   borderHi: "rgba(143,175,200,0.45)",
 };
 
+/* ── Helpers ──────────────────────────────────────────────────────── */
+
 function abbreviateName(name: string) {
   const p = name.trim().split(/\s+/);
   return p.length < 2 ? name.toUpperCase() : `${p[0][0].toUpperCase()}.${p.slice(1).join(" ").toUpperCase()}`;
@@ -26,6 +32,12 @@ function getRatingCap(position: number, season: number): number {
   const base = position <= 2 ? 92 : position <= 6 ? 90 : position <= 12 ? 87 : 85;
   return Math.min(99, base + (season - 1) * 3);
 }
+
+const POSITION_ORDER = [
+  "Pilier gauche", "Talonneur", "Pilier droit",
+  "Deuxième ligne", "Troisième ligne", "Numéro 8",
+  "Demi de mêlée", "Ouvreur", "Centre", "Ailier", "Arrière",
+];
 
 interface CatalogPlayer {
   name: string;
@@ -50,423 +62,744 @@ function buildCatalog(): CatalogPlayer[] {
   return catalog;
 }
 
-const POSITION_ORDER = [
-  "Pilier gauche", "Talonneur", "Pilier droit",
-  "Deuxième ligne", "Troisième ligne", "Numéro 8",
-  "Demi de mêlée", "Ouvreur", "Centre", "Ailier", "Arrière",
-];
+/* ── Props ────────────────────────────────────────────────────────── */
 
 interface Props {
   selectedPlayers: Player[];
   seasonNumber: number;
   myFinalPosition: number;
-  onComplete: (newPlayers: Player[]) => void;
+  budget: number;
+  upgrades: UpgradeGrades;
+  onComplete: (newPlayers: Player[], newBudget: number, newUpgrades: UpgradeGrades) => void;
 }
 
-export function MercatoScreen({ selectedPlayers, seasonNumber, myFinalPosition, onComplete }: Props) {
-  const [phase, setPhase] = useState<"release" | "recruit" | "progress">("release");
-  const [actOverlay, setActOverlay] = useState<{ text: string; act: number } | null>(
-    { text: "DÉPARTS", act: 1 }
-  );
-  const [releasedIndices, setReleasedIndices] = useState<Set<number>>(new Set());
-  const [squadForProgress, setSquadForProgress] = useState<Player[]>(selectedPlayers);
+/* ── Main component ───────────────────────────────────────────────── */
 
-  const remainingPlayers = selectedPlayers.filter((_, i) => !releasedIndices.has(i));
-  const releasedPositions = selectedPlayers.filter((_, i) => releasedIndices.has(i)).map(p => p.position);
+export function MercatoScreen({
+  selectedPlayers, seasonNumber, myFinalPosition,
+  budget, upgrades, onComplete,
+}: Props) {
+  // Snapshots at mercato start (used by reset)
+  const budgetAtStart    = useRef(budget);
+  const upgradesAtStart  = useRef({ ...upgrades });
+  const squadAtStart     = useRef([...selectedPlayers]);
+
+  const [phase, setPhase]               = useState<"main" | "recap" | "preseason">("main");
+  const [phaseTransitioning, setPhaseTransitioning] = useState(false);
+  const [squad, setSquad]               = useState<Player[]>([...selectedPlayers]);
+  const [openPositions, setOpenPositions] = useState<string[]>([]);
+  const [localBudget, setLocalBudget]   = useState(budget);
+  const [localUpgrades, setLocalUpgrades] = useState<UpgradeGrades>({ ...upgrades });
+  const [hasInvested, setHasInvested]   = useState(false);
+  const [sales, setSales]               = useState<{ player: Player; value: number }[]>([]);
+  const [purchases, setPurchases]       = useState<{ player: Player; price: number }[]>([]);
+
   const ratingCap = getRatingCap(myFinalPosition || 14, seasonNumber);
+  const catalog   = useMemo(() => buildCatalog(), []);
 
-  function toggleRelease(i: number) {
-    setReleasedIndices((prev) => {
-      const next = new Set(prev);
-      if (next.has(i)) { next.delete(i); } else if (next.size < 3) { next.add(i); }
-      return next;
+  function handleReset() {
+    setSquad([...squadAtStart.current]);
+    setOpenPositions([]);
+    setLocalBudget(budgetAtStart.current);
+    setLocalUpgrades({ ...upgradesAtStart.current });
+    setHasInvested(false);
+    setSales([]);
+    setPurchases([]);
+  }
+
+  function handleSell(playerIdx: number) {
+    const player = squad[playerIdx];
+    const value  = getMarketValue(player.rating);
+    setSquad(prev => prev.filter((_, i) => i !== playerIdx));
+    setOpenPositions(prev => [...prev, player.position]);
+    setLocalBudget(prev => prev + value);
+    setSales(prev => [...prev, { player, value }]);
+  }
+
+  function handleBuy(cp: CatalogPlayer) {
+    const discount = getRecruiterDiscount(localUpgrades.recruiter);
+    const price    = Math.round(getMarketValue(cp.rating) * (1 - discount));
+    const newPlayer: Player = { name: cp.name, position: cp.position, rating: cp.rating, club: cp.clubKey };
+    setSquad(prev => [...prev, newPlayer]);
+    setOpenPositions(prev => {
+      const idx = prev.indexOf(cp.position);
+      if (idx === -1) return prev;
+      const next = [...prev]; next.splice(idx, 1); return next;
     });
+    setLocalBudget(prev => prev - price);
+    setPurchases(prev => [...prev, { player: newPlayer, price }]);
   }
 
-  function handleConfirmReleases() {
-    if (releasedPositions.length === 0) {
-      setSquadForProgress(selectedPlayers);
-      setPhase("progress");
-      setActOverlay({ text: "PRÉ-SAISON", act: 3 });
-    } else {
-      setPhase("recruit");
-      setActOverlay({ text: "RECRUTEMENT", act: 2 });
+  function handleUpgrade(upgrade: ClubUpgrade) {
+    const cost = nextUpgradeCost(upgrade, localUpgrades[upgrade]);
+    if (cost === undefined || localBudget < cost || hasInvested) return;
+    setLocalUpgrades(prev => ({ ...prev, [upgrade]: (prev[upgrade] + 1) as 0 | 1 | 2 | 3 }));
+    setLocalBudget(prev => prev - cost);
+    setHasInvested(true);
+  }
+
+  function findUpgradePurchased(): { key: ClubUpgrade; grade: number } | null {
+    for (const key of ["stadium", "recruiter", "trainer", "marketing"] as ClubUpgrade[]) {
+      if (localUpgrades[key] !== upgradesAtStart.current[key]) {
+        return { key, grade: localUpgrades[key] };
+      }
     }
+    return null;
   }
 
-  function handleRecruitDone(players: Player[]) {
-    setSquadForProgress(players);
-    setPhase("progress");
-    setActOverlay({ text: "PRÉ-SAISON", act: 3 });
+  if (phase === "recap") {
+    const upgradePurchased = findUpgradePurchased();
+    return (
+      <main style={{ minHeight: "100svh", background: S.bg, color: S.text }} className="flex flex-col overflow-hidden">
+        <RecapInterSaison
+          sales={sales}
+          purchases={purchases}
+          upgradeKey={upgradePurchased?.key ?? null}
+          newUpgradeGrade={upgradePurchased?.grade ?? 0}
+          budgetBefore={budgetAtStart.current}
+          budgetAfter={localBudget}
+          seasonNumber={seasonNumber}
+          onValidate={() => setPhaseTransitioning(true)}
+          onBack={() => setPhase("main")}
+        />
+        {phaseTransitioning && (
+          <ScreenTransition
+            label="PRÉ-SAISON"
+            color={S.accent}
+            onReveal={() => setPhase("preseason")}
+            onDone={() => setPhaseTransitioning(false)}
+          />
+        )}
+      </main>
+    );
+  }
+
+  if (phase === "preseason") {
+    return (
+      <main style={{ minHeight: "100svh", background: S.bg, color: S.text }} className="flex flex-col overflow-hidden">
+        <ProgressPhase
+          players={squad}
+          boost={getTrainerBoost(localUpgrades.trainer)}
+          onConfirm={(boosted) => onComplete(boosted, localBudget, localUpgrades)}
+        />
+      </main>
+    );
   }
 
   return (
     <main style={{ minHeight: "100svh", background: S.bg, color: S.text }} className="flex flex-col overflow-hidden">
-
-      {/* Cinematic act title overlay */}
-      {actOverlay && (
-        <ActTitle act={actOverlay.act} text={actOverlay.text} onDone={() => setActOverlay(null)} />
-      )}
-
-      {/* Phase content rendered behind the overlay */}
-      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-        {phase === "release" && (
-          <ReleasePhase
-            players={selectedPlayers}
-            releasedIndices={releasedIndices}
-            onToggle={toggleRelease}
-            onConfirm={handleConfirmReleases}
-          />
-        )}
-        {phase === "recruit" && (
-          <RecruitPhase
-            remainingPlayers={remainingPlayers}
-            releasedPositions={releasedPositions}
-            ratingCap={ratingCap}
-            myFinalPosition={myFinalPosition || 14}
-            onDone={handleRecruitDone}
-          />
-        )}
-        {phase === "progress" && (
-          <ProgressPhase
-            players={squadForProgress}
-            onConfirm={onComplete}
-          />
-        )}
-      </div>
+      <InterSeasonPage
+        squad={squad}
+        openPositions={openPositions}
+        localBudget={localBudget}
+        localUpgrades={localUpgrades}
+        hasInvested={hasInvested}
+        catalog={catalog}
+        ratingCap={ratingCap}
+        seasonNumber={seasonNumber}
+        onSell={handleSell}
+        onBuy={handleBuy}
+        onUpgrade={handleUpgrade}
+        onReset={handleReset}
+        onNext={() => setPhase("recap")}
+      />
     </main>
   );
 }
 
-/* ── Cinematic act title ─────────────────────────────────────────── */
+/* ── InterSeasonPage ──────────────────────────────────────────────── */
 
-function ActTitle({ act, text, onDone }: { act: number; text: string; onDone: () => void }) {
-  const chars = text.split("");
-  const [visibleCount, setVisibleCount] = useState(0);
-  const [punchIdx, setPunchIdx]         = useState(-1);
-  const [pulse, setPulse]               = useState(false);
-  const [showLabel, setShowLabel]       = useState(false);
-  const [fadeOut, setFadeOut]           = useState(false);
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const onDoneRef = useRef(onDone);
-  onDoneRef.current = onDone;
+interface InterSeasonPageProps {
+  squad: Player[];
+  openPositions: string[];
+  localBudget: number;
+  localUpgrades: UpgradeGrades;
+  hasInvested: boolean;
+  catalog: CatalogPlayer[];
+  ratingCap: number;
+  seasonNumber: number;
+  onSell: (idx: number) => void;
+  onBuy: (cp: CatalogPlayer) => void;
+  onUpgrade: (upgrade: ClubUpgrade) => void;
+  onReset: () => void;
+  onNext: () => void;
+}
 
-  useEffect(() => {
-    const at = (fn: () => void, ms: number) => {
-      const t = setTimeout(fn, ms); timers.current.push(t);
-    };
+function InterSeasonPage({
+  squad, openPositions, localBudget, localUpgrades, hasInvested,
+  catalog, ratingCap, seasonNumber,
+  onSell, onBuy, onUpgrade, onReset, onNext,
+}: InterSeasonPageProps) {
+  const [activeTab, setActiveTab] = useState<"ventes" | "achats" | "club">("ventes");
+  const [resetKey, setResetKey]   = useState(0);
 
-    at(() => setShowLabel(true), 180);
+  function handleReset() {
+    onReset();
+    setResetKey(k => k + 1);
+    setActiveTab("ventes");
+  }
 
-    chars.forEach((_, i) => {
-      at(() => { setVisibleCount(i + 1); setPunchIdx(i); }, 480 + i * 95);
-      at(() => setPunchIdx(-1), 480 + i * 95 + 175);
-    });
-    const lastLetter = 480 + (chars.length - 1) * 95;
-
-    at(() => setPulse(true),   lastLetter + 220);
-    at(() => setPulse(false),  lastLetter + 460);
-    at(() => setFadeOut(true), lastLetter + 560);
-    at(() => onDoneRef.current(), lastLetter + 1050);
-
-    return () => { timers.current.forEach(clearTimeout); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const canProceed    = squad.length === 15 && openPositions.length === 0;
+  const budgetNeg     = localBudget < 0;
+  const openCount     = openPositions.length;
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 200,
-      background: S.bg,
-      opacity: fadeOut ? 0 : 1,
-      transition: fadeOut ? "opacity 0.5s ease" : "none",
-      pointerEvents: fadeOut ? "none" : "all",
-      display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center", gap: 20,
-    }}>
-      {/* Act number label */}
-      <p style={{
-        color: S.muted,
-        fontSize: 10, fontWeight: 700,
-        letterSpacing: "0.55em",
-        textTransform: "uppercase",
-        opacity: showLabel ? 1 : 0,
-        transition: "opacity 0.4s ease",
-      }}>
-        ACTE {act}
-      </p>
+    <div className="flex flex-col" style={{ height: "100svh" }}>
 
-      {/* Main title letters */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 4,
-        transform: pulse ? "scale(1.07)" : "scale(1)",
-        filter: pulse
-          ? `drop-shadow(0 0 28px rgba(143,175,200,0.9)) drop-shadow(0 0 60px rgba(143,175,200,0.35))`
-          : "none",
-        transition: "transform 0.15s ease, filter 0.15s ease",
-      }}>
-        {chars.map((char, i) => (
-          <span key={i} style={{
-            display: "inline-block",
-            fontSize: "clamp(36px, 8vw, 72px)",
-            fontWeight: 900,
-            lineHeight: 1,
-            textTransform: "uppercase",
-            color: char === "-" ? "rgba(143,175,200,0.4)" : S.accent,
-            opacity: visibleCount > i ? 1 : 0,
-            transform: punchIdx === i ? "scale(1.55) translateY(-5px)" : "scale(1) translateY(0)",
-            transition: "transform 0.2s cubic-bezier(0.34,1.56,0.64,1), opacity 0.01s",
-            textShadow: visibleCount > i
-              ? "0 0 20px rgba(143,175,200,0.7), 0 0 50px rgba(143,175,200,0.25)"
-              : "none",
-          }}>
-            {char}
-          </span>
+      {/* ── Header ────────────────────────────────────────────── */}
+      <header
+        className="flex-shrink-0 px-5 py-3.5"
+        style={{ borderBottom: `1px solid ${S.border}` }}
+      >
+        <div className="flex items-center justify-between">
+          {/* Brand + season */}
+          <div className="flex items-center gap-3">
+            <span className="font-black text-2xl tracking-tighter" style={{ color: S.text }}>
+              26<span style={{ color: S.accent }}>-</span>0
+            </span>
+            <div style={{ width: 1, height: 24, background: S.border }} />
+            <div>
+              <p style={{ color: S.faint, fontSize: 8, fontWeight: 700, letterSpacing: "0.35em", textTransform: "uppercase" }}>
+                Inter-saison
+              </p>
+              <p style={{ color: S.accent, fontSize: 10, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                Saison {seasonNumber}
+              </p>
+            </div>
+          </div>
+
+          {/* Budget + effectif */}
+          <div className="flex items-center gap-5">
+            <div className="text-right">
+              <p style={{ color: S.faint, fontSize: 8, fontWeight: 700, letterSpacing: "0.25em", textTransform: "uppercase", marginBottom: 2 }}>
+                Budget
+              </p>
+              <p style={{ color: budgetNeg ? "#F87171" : S.accent, fontSize: 13, fontWeight: 900 }}>
+                {formatBudget(localBudget)}
+              </p>
+            </div>
+            <div className="text-right">
+              <p style={{ color: S.faint, fontSize: 8, fontWeight: 700, letterSpacing: "0.25em", textTransform: "uppercase", marginBottom: 2 }}>
+                Effectif
+              </p>
+              <p style={{ color: squad.length === 15 && openCount === 0 ? S.accent : "#F87171", fontSize: 13, fontWeight: 900 }}>
+                {squad.length}<span style={{ color: S.faint, fontSize: 9 }}>/15</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* ── Tabs ──────────────────────────────────────────────── */}
+      <div className="flex flex-shrink-0" style={{ borderBottom: `1px solid ${S.border}` }}>
+        {(["ventes", "achats", "club"] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            style={{
+              flex: 1, padding: "11px 0",
+              fontSize: 10, fontWeight: 900,
+              textTransform: "uppercase", letterSpacing: "0.2em",
+              color: activeTab === tab ? S.accent : S.muted,
+              borderBottom: activeTab === tab ? `2px solid ${S.accent}` : "2px solid transparent",
+              background: "transparent",
+              transition: "color 0.15s",
+            }}
+          >
+            {tab === "ventes" ? "Ventes" : tab === "achats" ? "Achats" : "Mon Club"}
+          </button>
         ))}
       </div>
-    </div>
-  );
-}
 
-/* ── Shared components ───────────────────────────────────────────── */
+      {/* ── Tab content ───────────────────────────────────────── */}
+      <div key={resetKey} className="flex-1 overflow-y-auto">
+        {activeTab === "ventes" && (
+          <VentesTab squad={squad} onSell={onSell} />
+        )}
+        {activeTab === "achats" && (
+          <AchatsTab
+            squad={squad}
+            openPositions={openPositions}
+            localBudget={localBudget}
+            localUpgrades={localUpgrades}
+            catalog={catalog}
+            ratingCap={ratingCap}
+            onBuy={onBuy}
+          />
+        )}
+        {activeTab === "club" && (
+          <ClubTab
+            localUpgrades={localUpgrades}
+            localBudget={localBudget}
+            hasInvested={hasInvested}
+            onUpgrade={onUpgrade}
+          />
+        )}
+      </div>
 
-function PhaseHeader({ title, step }: { title: string; step: string }) {
-  return (
-    <header style={{ borderBottom: `1px solid ${S.border}` }} className="px-5 lg:px-8 py-4 flex items-center justify-between flex-shrink-0">
-      <div className="flex items-center gap-4">
-        <span className="font-black text-2xl tracking-tighter" style={{ color: S.text }}>
-          26<span style={{ color: S.accent }}>-</span>0
-        </span>
-        <div style={{ width: 1, height: 28, background: S.border }} />
-        <div>
-          <p style={{ color: S.accent, fontSize: 8, fontWeight: 700, letterSpacing: "0.35em", textTransform: "uppercase" }}>{step}</p>
-          <p style={{ color: S.text, fontSize: 11, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.08em" }}>{title}</p>
+      {/* ── Bottom bar ────────────────────────────────────────── */}
+      <div className="flex-shrink-0 px-5 pb-5 pt-3" style={{ borderTop: `1px solid ${S.border}` }}>
+        {!canProceed && (
+          <p style={{
+            color: openCount > 0 ? "#F87171" : S.faint,
+            fontSize: 9, fontWeight: 700,
+            textTransform: "uppercase", letterSpacing: "0.2em",
+            marginBottom: 10, textAlign: "center",
+          }}>
+            {openCount > 0
+              ? `${openCount} poste${openCount > 1 ? "s" : ""} à pourvoir dans Achats`
+              : `${15 - squad.length} joueur${15 - squad.length > 1 ? "s" : ""} manquant${15 - squad.length > 1 ? "s" : ""}`
+            }
+          </p>
+        )}
+        <div className="flex gap-2">
+          <button
+            onClick={handleReset}
+            style={{
+              padding: "13px 14px",
+              border: `1px solid ${S.border}`,
+              color: S.muted, fontSize: 9, fontWeight: 700,
+              textTransform: "uppercase", letterSpacing: "0.15em",
+              background: "transparent",
+            }}
+            title="Réinitialiser tous les mouvements de l'inter-saison"
+          >
+            ↺
+          </button>
+          <button
+            onClick={canProceed ? onNext : undefined}
+            disabled={!canProceed}
+            style={{
+              flex: 1, padding: "13px 0",
+              background: canProceed ? S.accent : "rgba(143,175,200,0.10)",
+              color: canProceed ? S.bg : S.faint,
+              fontSize: 11, fontWeight: 900,
+              textTransform: "uppercase", letterSpacing: "0.2em",
+              border: "none",
+              cursor: canProceed ? "pointer" : "not-allowed",
+              transition: "background 0.2s, color 0.2s",
+            }}
+          >
+            Passer à la saison suivante →
+          </button>
         </div>
       </div>
-    </header>
-  );
-}
-
-function InstructionBox({ lines }: { lines: string[] }) {
-  return (
-    <div style={{
-      background: S.bgCard,
-      border: `1px solid ${S.border}`,
-      borderLeft: `3px solid ${S.accent}`,
-      margin: "12px 20px",
-      padding: "10px 14px",
-      flexShrink: 0,
-    }}>
-      <p style={{ color: S.accent, fontSize: 8, fontWeight: 700, letterSpacing: "0.3em", textTransform: "uppercase", marginBottom: 6 }}>
-        Comment jouer
-      </p>
-      {lines.map((line, i) => (
-        <p key={i} style={{ color: S.text, fontSize: 11, lineHeight: 1.65, opacity: i > 0 ? 0.7 : 1 }}>
-          {line}
-        </p>
-      ))}
     </div>
   );
 }
 
-function PrimaryButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{ background: S.accent, color: S.bg }}
-      className="w-full font-black uppercase tracking-[0.2em] text-sm py-4 transition-opacity hover:opacity-85"
-    >
-      {children}
-    </button>
-  );
-}
+/* ── VentesTab ────────────────────────────────────────────────────── */
 
-function PlayerBadge({ rating }: { rating: number }) {
-  const tier = rating >= 90 ? 3 : rating >= 85 ? 2 : 1;
-  const bg = tier === 3 ? "#FFFFFF" : tier === 2 ? "#D4AF37" : "#0D0D0D";
-  const fg = tier === 2 ? "#000000" : "#D4AF37";
-  const border = tier === 3 ? "2px solid #D4AF37" : "none";
-  return (
-    <span style={{ background: bg, color: fg, border, padding: "1px 6px", fontSize: 10, fontWeight: 900, lineHeight: "16px", flexShrink: 0 }}>
-      {rating}
-    </span>
-  );
-}
+function VentesTab({ squad, onSell }: { squad: Player[]; onSell: (idx: number) => void }) {
+  const [confirmIdx, setConfirmIdx] = useState<number | null>(null);
 
-/* ── Phase 1 : Départs ───────────────────────────────────────────── */
-
-function ReleasePhase({ players, releasedIndices, onToggle, onConfirm }: {
-  players: Player[];
-  releasedIndices: Set<number>;
-  onToggle: (i: number) => void;
-  onConfirm: () => void;
-}) {
-  const sorted = [...players]
+  const sorted = [...squad]
     .map((p, i) => ({ player: p, originalIndex: i }))
     .sort((a, b) => POSITION_ORDER.indexOf(a.player.position) - POSITION_ORDER.indexOf(b.player.position));
 
   return (
-    <div className="flex flex-col h-full" style={{ minHeight: "100svh" }}>
-      <PhaseHeader title="Libère tes joueurs" step="Acte I · Départs" />
+    <div>
       <InstructionBox lines={[
-        "Sélectionne jusqu'à 3 joueurs à libérer. Ces joueurs quittent définitivement le club.",
-        "Appuie sur Continuer si tu souhaites garder tout ton effectif.",
+        "Libère les joueurs dont tu n'as plus besoin. Les joueurs notés 80 ou moins partent gratuitement.",
+        "Au-dessus de 80, leur valeur marchande est créditée sur ton budget.",
+        "Attention : chaque poste libéré devra être comblé avant de passer à la saison suivante.",
       ]} />
 
-      {releasedIndices.size > 0 && (
-        <div style={{ borderBottom: `1px solid ${S.border}`, padding: "6px 20px", flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ color: S.accent, fontSize: 8, fontWeight: 700, letterSpacing: "0.3em", textTransform: "uppercase" }}>
-            {releasedIndices.size} départ{releasedIndices.size > 1 ? "s" : ""} sélectionné{releasedIndices.size > 1 ? "s" : ""}
-          </span>
-          <span style={{ color: S.faint, fontSize: 8 }}>/ 3 max</span>
-        </div>
-      )}
+      {sorted.map(({ player, originalIndex }) => {
+        const value       = getMarketValue(player.rating);
+        const isFree      = value === 0;
+        const isConfirming = confirmIdx === originalIndex;
 
-      <div className="flex-1 overflow-y-auto">
-        {sorted.map(({ player, originalIndex }) => {
-          const isReleased = releasedIndices.has(originalIndex);
-          const blocked = !isReleased && releasedIndices.size >= 3;
-          return (
-            <button
-              key={originalIndex}
-              onClick={() => onToggle(originalIndex)}
-              disabled={blocked}
-              style={{
-                width: "100%", display: "flex", alignItems: "center", gap: 12,
-                padding: "12px 20px",
-                borderBottom: `1px solid ${S.border}`,
-                background: isReleased ? "rgba(239,68,68,0.08)" : "transparent",
-                opacity: blocked ? 0.3 : 1,
-                cursor: blocked ? "not-allowed" : "pointer",
-                textAlign: "left",
-                transition: "background 0.15s",
-              }}
-            >
-              <div style={{
-                width: 20, height: 20, border: `1px solid ${isReleased ? "rgba(239,68,68,0.6)" : S.border}`,
-                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-              }}>
-                {isReleased && <span style={{ color: "#F87171", fontSize: 10, fontWeight: 900 }}>✕</span>}
+        return (
+          <div
+            key={originalIndex}
+            style={{
+              borderBottom: `1px solid ${S.border}`,
+              background: isConfirming ? "rgba(239,68,68,0.07)" : "transparent",
+              transition: "background 0.15s",
+            }}
+          >
+            {!isConfirming ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 20px" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{
+                    fontWeight: 900, fontSize: 11,
+                    textTransform: "uppercase", letterSpacing: "0.06em", color: S.text,
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }}>
+                    {abbreviateName(player.name)}
+                  </p>
+                  <p style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.2em", color: S.faint, marginTop: 2 }}>
+                    {player.position}
+                    {player.club && <span style={{ marginLeft: 5, opacity: 0.6 }}>· {player.club.replace(/\s\d{2}-\d{2}$/, "")}</span>}
+                  </p>
+                </div>
+                <span style={{ fontSize: 9, fontWeight: 700, color: isFree ? S.faint : S.accent, flexShrink: 0, minWidth: 42, textAlign: "right" }}>
+                  {isFree ? "Libre" : `+${formatBudget(value)}`}
+                </span>
+                <PlayerBadge rating={player.rating} />
+                <button
+                  onClick={() => setConfirmIdx(originalIndex)}
+                  style={{
+                    fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.15em",
+                    color: "#F87171", border: "1px solid rgba(239,68,68,0.35)",
+                    padding: "5px 9px", background: "transparent", flexShrink: 0,
+                  }}
+                >
+                  Vendre
+                </button>
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{
-                  fontWeight: 900, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em",
-                  color: isReleased ? S.muted : S.text,
-                  textDecoration: isReleased ? "line-through" : "none",
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                }}>
-                  {abbreviateName(player.name)}
-                </p>
-                <p style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.25em", color: S.faint, marginTop: 2 }}>
-                  {player.position}
-                  {player.club && <span style={{ marginLeft: 4, opacity: 0.6 }}>· {player.club.replace(/\s\d{2}-\d{2}$/, "")}</span>}
-                </p>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 20px" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontWeight: 900, fontSize: 11, color: "#F87171", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    {abbreviateName(player.name)}
+                  </p>
+                  <p style={{ fontSize: 9, color: S.faint, marginTop: 2, textTransform: "uppercase", letterSpacing: "0.15em" }}>
+                    {isFree ? "Départ libre · 0 €" : `+${formatBudget(value)} sur ton budget`}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setConfirmIdx(null)}
+                  style={{
+                    fontSize: 9, fontWeight: 700, color: S.muted, textTransform: "uppercase",
+                    letterSpacing: "0.12em", background: "transparent",
+                    padding: "5px 9px", border: `1px solid ${S.border}`, flexShrink: 0,
+                  }}
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={() => { setConfirmIdx(null); onSell(originalIndex); }}
+                  style={{
+                    fontSize: 9, fontWeight: 700, color: "#F87171", textTransform: "uppercase",
+                    letterSpacing: "0.12em", background: "rgba(239,68,68,0.12)",
+                    padding: "5px 9px", border: "1px solid rgba(239,68,68,0.4)", flexShrink: 0,
+                  }}
+                >
+                  Confirmer
+                </button>
               </div>
-              <PlayerBadge rating={player.rating} />
-            </button>
-          );
-        })}
-      </div>
-
-      <div style={{ flexShrink: 0, padding: "16px 20px", borderTop: `1px solid ${S.border}` }}>
-        <PrimaryButton onClick={onConfirm}>
-          {releasedIndices.size === 0
-            ? "Continuer sans changement →"
-            : `Confirmer ${releasedIndices.size} départ${releasedIndices.size > 1 ? "s" : ""} →`}
-        </PrimaryButton>
-      </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-/* ── Phase 2 : Recrutement ───────────────────────────────────────── */
+/* ── AchatsTab ────────────────────────────────────────────────────── */
 
-function RecruitPhase({ remainingPlayers, releasedPositions, ratingCap, myFinalPosition, onDone }: {
-  remainingPlayers: Player[];
-  releasedPositions: string[];
+interface AchatsTabProps {
+  squad: Player[];
+  openPositions: string[];
+  localBudget: number;
+  localUpgrades: UpgradeGrades;
+  catalog: CatalogPlayer[];
   ratingCap: number;
-  myFinalPosition: number;
-  onDone: (players: Player[]) => void;
-}) {
-  const [recruited, setRecruited] = useState<Player[]>([]);
-  const currentSlot = recruited.length;
-  const done = currentSlot >= releasedPositions.length;
-  const squadSoFar = [...remainingPlayers, ...recruited];
-  const currentPosition = releasedPositions[currentSlot];
+  onBuy: (cp: CatalogPlayer) => void;
+}
 
-  const catalog = buildCatalog();
-  const eligible = done ? [] : catalog
-    .filter(cp =>
-      cp.position === currentPosition &&
-      cp.rating <= ratingCap &&
-      !squadSoFar.some(sp => sp.name === cp.name)
-    )
-    .sort((a, b) => b.rating - a.rating);
+function AchatsTab({ squad, openPositions, localBudget, localUpgrades, catalog, ratingCap, onBuy }: AchatsTabProps) {
+  const [confirmCp, setConfirmCp] = useState<CatalogPlayer | null>(null);
 
-  function handleSelectPlayer(cp: CatalogPlayer) {
-    setRecruited([...recruited, { name: cp.name, position: cp.position, rating: cp.rating, club: cp.clubKey }]);
-  }
+  const discount    = getRecruiterDiscount(localUpgrades.recruiter);
+  const discountPct = Math.round(discount * 100);
 
-  const posRange = myFinalPosition <= 2 ? "1er-2e"
-    : myFinalPosition <= 6 ? "3e-6e"
-    : myFinalPosition <= 12 ? "7e-12e"
-    : "13e-14e";
-  const instructionLines = [
-    "Continue à construire ton XV de légende en recrutant parmi les meilleurs joueurs de l'histoire du TOP 14.",
-    `Classement ${posRange} la saison dernière = note maximale pour recruter : ${ratingCap}.`,
-  ];
+  const eligibleByPosition = useMemo(() => {
+    const uniquePos = [...new Set(openPositions)];
+    const result: Record<string, CatalogPlayer[]> = {};
+    for (const pos of uniquePos) {
+      result[pos] = catalog
+        .filter(cp => {
+          const price = Math.round(getMarketValue(cp.rating) * (1 - discount));
+          return (
+            cp.position === pos &&
+            cp.rating <= ratingCap &&
+            !squad.some(sp => sp.name === cp.name) &&
+            price <= localBudget
+          );
+        })
+        .sort((a, b) => b.rating - a.rating);
+    }
+    return result;
+  }, [catalog, openPositions, squad, localBudget, discount, ratingCap]);
 
-  if (done) {
+  const uniqueOpenPos = [...new Set(openPositions)];
+
+  const openPosSummary = POSITION_ORDER
+    .filter(pos => uniqueOpenPos.includes(pos))
+    .map(pos => {
+      const count = openPositions.filter(p => p === pos).length;
+      return count > 1 ? `${pos} ×${count}` : pos;
+    })
+    .join(" · ");
+
+  const allCandidates = POSITION_ORDER
+    .filter(pos => uniqueOpenPos.includes(pos))
+    .flatMap(pos => eligibleByPosition[pos] ?? []);
+
+  if (openPositions.length === 0) {
     return (
-      <div className="flex flex-col" style={{ minHeight: "100svh" }}>
-        <PhaseHeader title="Recrute tes remplaçants" step="Acte II · Recrutement" />
-        <div className="flex-1 flex flex-col items-center justify-center px-5 gap-6">
-          <div className="text-center">
-            <p style={{ color: S.accent, fontSize: 13, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.3em", marginBottom: 8 }}>
-              Recrutement terminé
-            </p>
-            <p style={{ color: S.muted, fontSize: 12 }}>
-              {releasedPositions.length} recrue{releasedPositions.length > 1 ? "s" : ""} intégrée{releasedPositions.length > 1 ? "s" : ""} à l&apos;effectif
-            </p>
-          </div>
-          {recruited.length > 0 && (
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
-              {recruited.map((p, i) => (
-                <span key={i} style={{ fontSize: 9, fontWeight: 900, textTransform: "uppercase", color: S.accent, background: "rgba(143,175,200,0.1)", padding: "3px 8px" }}>
-                  ✓ {p.name.split(" ").at(-1)} · {p.rating}
-                </span>
-              ))}
-            </div>
-          )}
-          <div className="w-full max-w-sm">
-            <PrimaryButton onClick={() => onDone([...remainingPlayers, ...recruited])}>
-              Passer à la pré-saison →
-            </PrimaryButton>
-          </div>
+      <div>
+        <InstructionBox lines={[
+          "Vends d'abord des joueurs pour libérer des postes.",
+          "Le catalogue affiche uniquement les joueurs dont le poste est ouvert et que tu peux acheter avec ton budget.",
+          "Les joueurs notés 80 ou moins sont disponibles gratuitement.",
+        ]} />
+        <div style={{ padding: "40px 20px", textAlign: "center" }}>
+          <p style={{ color: S.muted, fontSize: 12 }}>Aucun poste à pourvoir.</p>
+          <p style={{ color: S.faint, fontSize: 11, marginTop: 8 }}>
+            Rends-toi dans l&apos;onglet Ventes pour libérer un joueur.
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col" style={{ minHeight: "100svh" }}>
-      <PhaseHeader title="Recrute tes remplaçants" step="Acte II · Recrutement" />
-      <InstructionBox lines={instructionLines} />
-      <RecruitCatalogView
-        position={currentPosition}
-        slotLabel={`Recrue ${currentSlot + 1} / ${releasedPositions.length}`}
-        ratingCap={ratingCap}
-        candidates={eligible}
-        recruited={recruited}
-        onSelectPlayer={handleSelectPlayer}
-      />
+    <div>
+      <InstructionBox lines={[
+        `À recruter : ${openPosSummary}.`,
+        allCandidates.length === 0
+          ? "Aucun joueur disponible avec ton budget actuel. Vends d'autres joueurs pour augmenter ton budget."
+          : discountPct > 0
+            ? `Réduction recruteur −${discountPct} % appliquée. ${allCandidates.length} joueur${allCandidates.length > 1 ? "s" : ""} disponible${allCandidates.length > 1 ? "s" : ""}.`
+            : `${allCandidates.length} joueur${allCandidates.length > 1 ? "s" : ""} disponible${allCandidates.length > 1 ? "s" : ""}. Améliore ton recruteur pour obtenir des réductions.`,
+      ]} />
+
+      {allCandidates.length === 0 ? (
+        <div style={{ padding: "24px 20px", textAlign: "center" }}>
+          <p style={{ color: S.faint, fontSize: 11 }}>
+            Aucun joueur accessible avec le budget actuel.
+          </p>
+        </div>
+      ) : (
+        allCandidates.map(cp => {
+          const price      = Math.round(getMarketValue(cp.rating) * (1 - discount));
+          const isFree     = price === 0;
+          const isConfirming = confirmCp?.name === cp.name && confirmCp?.clubKey === cp.clubKey;
+
+          return (
+            <div
+              key={`${cp.clubKey}-${cp.name}`}
+              style={{
+                borderBottom: `1px solid ${S.border}`,
+                background: isConfirming ? "rgba(143,175,200,0.06)" : "transparent",
+                transition: "background 0.15s",
+              }}
+            >
+              {!isConfirming ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 20px" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontWeight: 900, fontSize: 11, color: S.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {abbreviateName(cp.name)}
+                    </p>
+                    <p style={{ fontSize: 9, color: S.faint, marginTop: 2, textTransform: "uppercase", letterSpacing: "0.15em" }}>
+                      {cp.position} · {cp.clubName} {cp.season}
+                    </p>
+                  </div>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: isFree ? S.faint : "#F87171", flexShrink: 0, minWidth: 42, textAlign: "right" }}>
+                    {isFree ? "Libre" : `−${formatBudget(price)}`}
+                  </span>
+                  <PlayerBadge rating={cp.rating} />
+                  <button
+                    onClick={() => setConfirmCp(cp)}
+                    style={{
+                      fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.15em",
+                      color: S.accent, border: `1px solid ${S.borderHi}`,
+                      padding: "5px 9px", background: "transparent", flexShrink: 0,
+                    }}
+                  >
+                    Recruter
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 20px" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontWeight: 900, fontSize: 11, color: S.accent, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                      {abbreviateName(cp.name)}
+                    </p>
+                    <p style={{ fontSize: 9, color: S.faint, marginTop: 2, textTransform: "uppercase", letterSpacing: "0.15em" }}>
+                      {cp.position} · {isFree ? "0 €" : `−${formatBudget(price)}`}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setConfirmCp(null)}
+                    style={{
+                      fontSize: 9, fontWeight: 700, color: S.muted, textTransform: "uppercase",
+                      letterSpacing: "0.12em", background: "transparent",
+                      padding: "5px 9px", border: `1px solid ${S.border}`, flexShrink: 0,
+                    }}
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={() => { setConfirmCp(null); onBuy(cp); }}
+                    style={{
+                      fontSize: 9, fontWeight: 700, color: S.accent, textTransform: "uppercase",
+                      letterSpacing: "0.12em", background: "rgba(143,175,200,0.10)",
+                      padding: "5px 9px", border: `1px solid ${S.borderHi}`, flexShrink: 0,
+                    }}
+                  >
+                    Confirmer
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
 
-/* ── Phase 3 : Pré-saison / Progression ─────────────────────────── */
+/* ── ClubTab ──────────────────────────────────────────────────────── */
 
-function ProgressPhase({ players, onConfirm }: {
+interface ClubTabProps {
+  localUpgrades: UpgradeGrades;
+  localBudget: number;
+  hasInvested: boolean;
+  onUpgrade: (upgrade: ClubUpgrade) => void;
+}
+
+function ClubTab({ localUpgrades, localBudget, hasInvested, onUpgrade }: ClubTabProps) {
+  const [confirmUpgrade, setConfirmUpgrade] = useState<ClubUpgrade | null>(null);
+
+  const upgradeList: ClubUpgrade[] = ["stadium", "recruiter", "trainer", "marketing"];
+
+  return (
+    <div>
+      <InstructionBox lines={[
+        "Investis dans le développement de ton club pour améliorer tes performances saison après saison.",
+        hasInvested
+          ? "Tu as déjà réalisé ton investissement cette inter-saison. Rendez-vous la saison prochaine."
+          : "Un seul investissement par inter-saison. Choisis bien — les effets sont permanents.",
+      ]} />
+
+      <div style={{ padding: "12px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+        {upgradeList.map(upgrade => {
+          const grade      = localUpgrades[upgrade] as 0 | 1 | 2 | 3;
+          const cost       = nextUpgradeCost(upgrade, grade);
+          const isMaxed    = grade >= 3;
+          const canAfford  = cost !== undefined && localBudget >= cost;
+          const blocked    = hasInvested || !canAfford || isMaxed;
+          const isConfirming = confirmUpgrade === upgrade;
+          const description = !isMaxed
+            ? UPGRADE_GRADE_DESCRIPTIONS[upgrade][grade as 0 | 1 | 2]
+            : "Niveau maximum atteint";
+
+          return (
+            <div
+              key={upgrade}
+              style={{
+                border: `1px solid ${isMaxed ? "rgba(143,175,200,0.06)" : S.border}`,
+                background: isConfirming ? "rgba(143,175,200,0.06)" : S.bgCard,
+                padding: "14px 16px",
+                transition: "background 0.15s",
+              }}
+            >
+              {/* Name + grade bars */}
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
+                <div>
+                  <p style={{ color: isMaxed ? S.faint : S.text, fontSize: 11, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                    {UPGRADE_LABELS[upgrade]}
+                  </p>
+                  <div style={{ display: "flex", gap: 3, marginTop: 6 }}>
+                    {[0, 1, 2].map(g => (
+                      <span
+                        key={g}
+                        style={{
+                          display: "inline-block", width: 20, height: 3,
+                          background: g < grade ? S.accent : "rgba(143,175,200,0.15)",
+                          transition: "background 0.25s",
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+                {isMaxed ? (
+                  <span style={{ fontSize: 9, fontWeight: 700, color: S.faint, textTransform: "uppercase", letterSpacing: "0.2em" }}>
+                    Max
+                  </span>
+                ) : (
+                  cost !== undefined && (
+                    <span style={{ fontSize: 12, fontWeight: 900, color: canAfford ? S.accent : S.faint }}>
+                      {formatBudget(cost)}
+                    </span>
+                  )
+                )}
+              </div>
+
+              {/* Effect description */}
+              <p style={{ fontSize: 10, color: isMaxed ? S.faint : S.muted, lineHeight: 1.55 }}>
+                {description}
+              </p>
+
+              {/* Status / action */}
+              {!isMaxed && !isConfirming && (
+                <>
+                  {!blocked ? (
+                    <button
+                      onClick={() => setConfirmUpgrade(upgrade)}
+                      style={{
+                        width: "100%", marginTop: 10,
+                        padding: "8px 0", background: "transparent",
+                        border: `1px solid ${S.borderHi}`,
+                        color: S.accent, fontSize: 9, fontWeight: 700,
+                        textTransform: "uppercase", letterSpacing: "0.2em",
+                      }}
+                    >
+                      Investir {cost !== undefined ? formatBudget(cost) : ""} →
+                    </button>
+                  ) : (
+                    <p style={{ fontSize: 9, color: S.faint, marginTop: 8, textTransform: "uppercase", letterSpacing: "0.15em" }}>
+                      {hasInvested ? "Déjà investi cette saison" : "Budget insuffisant"}
+                    </p>
+                  )}
+                </>
+              )}
+
+              {isConfirming && (
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <button
+                    onClick={() => setConfirmUpgrade(null)}
+                    style={{
+                      flex: 1, padding: "8px 0", background: "transparent",
+                      border: `1px solid ${S.border}`,
+                      color: S.muted, fontSize: 9, fontWeight: 700,
+                      textTransform: "uppercase", letterSpacing: "0.15em",
+                    }}
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={() => { setConfirmUpgrade(null); onUpgrade(upgrade); }}
+                    style={{
+                      flex: 2, padding: "8px 0",
+                      background: "rgba(143,175,200,0.12)",
+                      border: `1px solid ${S.borderHi}`,
+                      color: S.accent, fontSize: 9, fontWeight: 700,
+                      textTransform: "uppercase", letterSpacing: "0.15em",
+                    }}
+                  >
+                    Confirmer l&apos;investissement
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── ProgressPhase ────────────────────────────────────────────────── */
+
+function ProgressPhase({ players, boost, onConfirm }: {
   players: Player[];
+  boost: number;
   onConfirm: (players: Player[]) => void;
 }) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -477,22 +810,35 @@ function ProgressPhase({ players, onConfirm }: {
 
   function handleConfirm() {
     if (selectedIndex === null) { onConfirm(players); return; }
-    onConfirm(players.map((p, i) => i === selectedIndex ? { ...p, rating: Math.min(99, p.rating + 2) } : p));
+    onConfirm(players.map((p, i) => i === selectedIndex ? { ...p, rating: Math.min(99, p.rating + boost) } : p));
   }
 
   return (
     <div className="flex flex-col" style={{ minHeight: "100svh" }}>
-      <PhaseHeader title="Stage de pré-saison" step="Acte III · Entraînement" />
+      {/* Header */}
+      <header style={{ borderBottom: `1px solid ${S.border}` }} className="px-5 lg:px-8 py-4 flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-4">
+          <span className="font-black text-2xl tracking-tighter" style={{ color: S.text }}>
+            26<span style={{ color: S.accent }}>-</span>0
+          </span>
+          <div style={{ width: 1, height: 28, background: S.border }} />
+          <div>
+            <p style={{ color: S.accent, fontSize: 8, fontWeight: 700, letterSpacing: "0.35em", textTransform: "uppercase" }}>Pré-saison</p>
+            <p style={{ color: S.text, fontSize: 11, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.08em" }}>Stage d&apos;entraînement</p>
+          </div>
+        </div>
+      </header>
+
       <InstructionBox lines={[
-        "Choisis un joueur pour lui faire suivre un stage intensif. Il gagne +2 points de note.",
-        "Appuie sur Lancer la saison si tu ne veux booster personne. Maximum atteignable : 99.",
+        `Choisis un joueur pour lui faire suivre un stage intensif. Il gagne +${boost} points de note.`,
+        "Maximum atteignable : 99. Appuie sur Lancer la saison si tu ne veux booster personne.",
       ]} />
 
       <div className="flex-1 overflow-y-auto">
         {sorted.map(({ player, originalIndex }) => {
-          const isSelected = selectedIndex === originalIndex;
-          const blocked = player.rating >= 98;
-          const displayRating = isSelected ? Math.min(99, player.rating + 2) : player.rating;
+          const isSelected    = selectedIndex === originalIndex;
+          const blocked       = player.rating >= 98;
+          const displayRating = isSelected ? Math.min(99, player.rating + boost) : player.rating;
           return (
             <button
               key={originalIndex}
@@ -500,13 +846,11 @@ function ProgressPhase({ players, onConfirm }: {
               disabled={blocked}
               style={{
                 width: "100%", display: "flex", alignItems: "center", gap: 12,
-                padding: "12px 20px",
-                borderBottom: `1px solid ${S.border}`,
+                padding: "12px 20px", borderBottom: `1px solid ${S.border}`,
                 background: isSelected ? "rgba(143,175,200,0.07)" : "transparent",
                 opacity: blocked ? 0.3 : 1,
                 cursor: blocked ? "not-allowed" : "pointer",
-                textAlign: "left",
-                transition: "background 0.15s",
+                textAlign: "left", transition: "background 0.15s",
               }}
             >
               <div style={{
@@ -533,7 +877,7 @@ function ProgressPhase({ players, onConfirm }: {
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                 {isSelected && (
-                  <span style={{ color: S.accent, fontSize: 9, fontWeight: 900, letterSpacing: "0.15em" }}>+2</span>
+                  <span style={{ color: S.accent, fontSize: 9, fontWeight: 900, letterSpacing: "0.15em" }}>+{boost}</span>
                 )}
                 <PlayerBadge rating={displayRating} />
               </div>
@@ -543,82 +887,231 @@ function ProgressPhase({ players, onConfirm }: {
       </div>
 
       <div style={{ flexShrink: 0, padding: "16px 20px", borderTop: `1px solid ${S.border}` }}>
-        <PrimaryButton onClick={handleConfirm}>
+        <button
+          onClick={handleConfirm}
+          style={{ background: S.accent, color: S.bg, width: "100%" }}
+          className="font-black uppercase tracking-[0.2em] text-sm py-4 transition-opacity hover:opacity-85"
+        >
           {selectedIndex === null ? "Lancer la saison →" : "Confirmer →"}
-        </PrimaryButton>
+        </button>
       </div>
     </div>
   );
 }
 
-/* ── Catalog view (Recrutement) ──────────────────────────────────── */
+/* ── Shared UI ────────────────────────────────────────────────────── */
 
-function RecruitCatalogView({ position, slotLabel, ratingCap, candidates, recruited, onSelectPlayer }: {
-  position: string;
-  slotLabel: string;
-  ratingCap: number;
-  candidates: CatalogPlayer[];
-  recruited: Player[];
-  onSelectPlayer: (cp: CatalogPlayer) => void;
-}) {
+function PlayerBadge({ rating }: { rating: number }) {
+  const tier   = rating >= 90 ? 3 : rating >= 85 ? 2 : 1;
+  const bg     = tier === 3 ? "#FFFFFF" : tier === 2 ? "#D4AF37" : "#0D0D0D";
+  const fg     = tier === 2 ? "#000000" : "#D4AF37";
+  const border = tier === 3 ? "2px solid #D4AF37" : "none";
   return (
-    <div className="flex flex-col flex-1 overflow-hidden">
-      {/* Position header */}
-      <div style={{ padding: "14px 20px", borderBottom: `1px solid ${S.border}`, flexShrink: 0 }}>
-        <p style={{ color: S.faint, fontSize: 9, fontWeight: 700, letterSpacing: "0.3em", textTransform: "uppercase", marginBottom: 4 }}>{slotLabel}</p>
-        <h2 style={{ fontSize: 18, fontWeight: 900, lineHeight: 1.2, color: S.text }}>{position}</h2>
-        <p style={{ color: S.accent, fontSize: 10, marginTop: 4 }}>
-          Note max : <strong>{ratingCap}</strong>
-          <span style={{ color: S.faint }}> · {candidates.length} joueur{candidates.length !== 1 ? "s" : ""} disponible{candidates.length !== 1 ? "s" : ""}</span>
-        </p>
-        {recruited.length > 0 && (
-          <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {recruited.map((p, i) => (
-              <span key={i} style={{ fontSize: 9, fontWeight: 900, textTransform: "uppercase", color: S.accent, background: "rgba(143,175,200,0.1)", padding: "3px 8px" }}>
-                ✓ {p.name.split(" ").at(-1)} · {p.rating}
-              </span>
-            ))}
+    <span style={{ background: bg, color: fg, border, padding: "1px 6px", fontSize: 10, fontWeight: 900, lineHeight: "16px", flexShrink: 0 }}>
+      {rating}
+    </span>
+  );
+}
+
+function SectionTitle({ label }: { label: string }) {
+  return (
+    <div style={{ padding: "8px 20px 6px", borderBottom: `1px solid ${S.border}` }}>
+      <p style={{ color: S.accent, fontSize: 8, fontWeight: 700, letterSpacing: "0.4em", textTransform: "uppercase" }}>
+        {label}
+      </p>
+    </div>
+  );
+}
+
+/* ── RecapInterSaison ─────────────────────────────────────────────── */
+
+interface RecapInterSaisonProps {
+  sales: { player: Player; value: number }[];
+  purchases: { player: Player; price: number }[];
+  upgradeKey: ClubUpgrade | null;
+  newUpgradeGrade: number;
+  budgetBefore: number;
+  budgetAfter: number;
+  seasonNumber: number;
+  onValidate: () => void;
+  onBack: () => void;
+}
+
+function RecapInterSaison({
+  sales, purchases, upgradeKey, newUpgradeGrade,
+  budgetBefore, budgetAfter, seasonNumber,
+  onValidate, onBack,
+}: RecapInterSaisonProps) {
+  const hasChanges = sales.length > 0 || purchases.length > 0 || upgradeKey !== null;
+
+  return (
+    <div className="flex flex-col" style={{ height: "100svh" }}>
+      {/* Header */}
+      <header className="flex-shrink-0 px-5 py-3.5" style={{ borderBottom: `1px solid ${S.border}` }}>
+        <div className="flex items-center gap-3">
+          <span className="font-black text-2xl tracking-tighter" style={{ color: S.text }}>
+            26<span style={{ color: S.accent }}>-</span>0
+          </span>
+          <div style={{ width: 1, height: 24, background: S.border }} />
+          <div>
+            <p style={{ color: S.faint, fontSize: 8, fontWeight: 700, letterSpacing: "0.35em", textTransform: "uppercase" }}>
+              Inter-saison · S{seasonNumber}
+            </p>
+            <p style={{ color: S.accent, fontSize: 10, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+              Récapitulatif
+            </p>
           </div>
-        )}
-      </div>
+        </div>
+      </header>
 
-      {/* Column header */}
-      <div style={{ padding: "7px 20px", borderBottom: `1px solid ${S.border}`, display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-        <span style={{ flex: 1, fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.35em", color: S.faint }}>Joueur — Club — Saison</span>
-        <span style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.35em", color: S.faint }}>Note</span>
-      </div>
-
-      {/* Scrollable list */}
+      {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
-        {candidates.length === 0 ? (
-          <div style={{ padding: "40px 20px", textAlign: "center" }}>
-            <p style={{ color: S.muted, fontSize: 12 }}>Aucun joueur disponible pour ce poste avec le cap actuel.</p>
+        {!hasChanges ? (
+          <div style={{ padding: "48px 20px", textAlign: "center" }}>
+            <p style={{ color: S.muted, fontSize: 13, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.2em" }}>
+              Aucune modification
+            </p>
+            <p style={{ color: S.faint, fontSize: 11, marginTop: 10, lineHeight: 1.6 }}>
+              Tu passes à la prochaine saison avec le même effectif.
+            </p>
           </div>
         ) : (
-          candidates.map((cp) => (
-            <button
-              key={`${cp.clubKey}-${cp.name}`}
-              onClick={() => onSelectPlayer(cp)}
-              style={{
-                width: "100%", display: "flex", alignItems: "center", gap: 12,
-                padding: "10px 20px", borderBottom: `1px solid ${S.border}`,
-                background: "transparent", cursor: "pointer", textAlign: "left",
-                transition: "background 0.1s",
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(143,175,200,0.05)"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
-            >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontWeight: 900, fontSize: 11, color: S.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {abbreviateName(cp.name)}
-                  <span style={{ color: S.faint, fontWeight: 400 }}> — {cp.clubName} — {cp.season}</span>
-                </p>
+          <>
+            {/* Départs */}
+            {sales.length > 0 && (
+              <div>
+                <SectionTitle label={`Départs · ${sales.length}`} />
+                {sales.map(({ player, value }, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 20px", borderBottom: `1px solid ${S.border}` }}>
+                    <span style={{ color: "#F87171", fontSize: 10, fontWeight: 900, width: 14, flexShrink: 0 }}>✕</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontWeight: 900, fontSize: 11, color: S.muted, textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {abbreviateName(player.name)}
+                      </p>
+                      <p style={{ fontSize: 9, color: S.faint, marginTop: 2, textTransform: "uppercase", letterSpacing: "0.2em" }}>
+                        {player.position}
+                      </p>
+                    </div>
+                    <PlayerBadge rating={player.rating} />
+                    <span style={{ fontSize: 10, fontWeight: 700, color: value > 0 ? S.accent : S.faint, minWidth: 52, textAlign: "right", flexShrink: 0 }}>
+                      {value > 0 ? `+${formatBudget(value)}` : "Libre"}
+                    </span>
+                  </div>
+                ))}
               </div>
-              <PlayerBadge rating={cp.rating} />
-            </button>
-          ))
+            )}
+
+            {/* Arrivées */}
+            {purchases.length > 0 && (
+              <div>
+                <SectionTitle label={`Arrivées · ${purchases.length}`} />
+                {purchases.map(({ player, price }, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 20px", borderBottom: `1px solid ${S.border}` }}>
+                    <span style={{ color: S.accent, fontSize: 10, fontWeight: 900, width: 14, flexShrink: 0 }}>✓</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontWeight: 900, fontSize: 11, color: S.text, textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {abbreviateName(player.name)}
+                      </p>
+                      <p style={{ fontSize: 9, color: S.faint, marginTop: 2, textTransform: "uppercase", letterSpacing: "0.2em" }}>
+                        {player.position}{player.club ? ` · ${player.club.replace(/\s\d{2}-\d{2}$/, "")}` : ""}
+                      </p>
+                    </div>
+                    <PlayerBadge rating={player.rating} />
+                    <span style={{ fontSize: 10, fontWeight: 700, color: price > 0 ? "#F87171" : S.faint, minWidth: 52, textAlign: "right", flexShrink: 0 }}>
+                      {price > 0 ? `−${formatBudget(price)}` : "Libre"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Investissement club */}
+            {upgradeKey !== null && (
+              <div>
+                <SectionTitle label="Investissement club" />
+                <div style={{ padding: "12px 20px", borderBottom: `1px solid ${S.border}` }}>
+                  <p style={{ fontWeight: 900, fontSize: 11, color: S.text, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                    {UPGRADE_LABELS[upgradeKey]}
+                  </p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 6 }}>
+                    {[0, 1, 2].map(g => (
+                      <span key={g} style={{ display: "inline-block", width: 20, height: 3, background: g < newUpgradeGrade ? S.accent : "rgba(143,175,200,0.15)" }} />
+                    ))}
+                    <span style={{ color: S.faint, fontSize: 9, marginLeft: 8 }}>Grade {newUpgradeGrade}</span>
+                  </div>
+                  <p style={{ fontSize: 10, color: S.muted, marginTop: 7, lineHeight: 1.5 }}>
+                    {UPGRADE_GRADE_DESCRIPTIONS[upgradeKey][(newUpgradeGrade - 1) as 0 | 1 | 2]}
+                  </p>
+                </div>
+              </div>
+            )}
+          </>
         )}
+
+        {/* Bilan budgétaire — always shown */}
+        <div style={{ borderTop: hasChanges ? `1px solid ${S.border}` : "none" }}>
+          <SectionTitle label="Bilan budgétaire" />
+          <div style={{ padding: "10px 20px 16px", display: "flex", flexDirection: "column", gap: 7 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <span style={{ color: S.faint, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.2em" }}>Avant</span>
+              <span style={{ color: S.muted, fontSize: 11, fontWeight: 700 }}>{formatBudget(budgetBefore)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <span style={{ color: S.accent, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.2em", fontWeight: 700 }}>Après</span>
+              <span style={{ color: budgetAfter < 0 ? "#F87171" : S.accent, fontSize: 14, fontWeight: 900 }}>
+                {formatBudget(budgetAfter)}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Action buttons */}
+      <div className="flex gap-2 flex-shrink-0 px-5 pb-5 pt-3" style={{ borderTop: `1px solid ${S.border}` }}>
+        <button
+          onClick={onBack}
+          style={{
+            flex: 1, padding: "13px 0",
+            border: `1px solid ${S.border}`,
+            color: S.muted, fontSize: 10, fontWeight: 700,
+            textTransform: "uppercase", letterSpacing: "0.15em",
+            background: "transparent",
+          }}
+        >
+          ← Retour
+        </button>
+        <button
+          onClick={onValidate}
+          style={{
+            flex: 2, padding: "13px 0",
+            background: S.accent, color: S.bg,
+            fontSize: 11, fontWeight: 900,
+            textTransform: "uppercase", letterSpacing: "0.2em",
+            border: "none", cursor: "pointer",
+          }}
+        >
+          Valider →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function InstructionBox({ lines }: { lines: string[] }) {
+  return (
+    <div style={{
+      background: S.bgCard, border: `1px solid ${S.border}`,
+      borderLeft: `3px solid ${S.accent}`,
+      margin: "12px 20px", padding: "10px 14px", flexShrink: 0,
+    }}>
+      <p style={{ color: S.accent, fontSize: 8, fontWeight: 700, letterSpacing: "0.3em", textTransform: "uppercase", marginBottom: 6 }}>
+        Comment jouer
+      </p>
+      {lines.map((line, i) => (
+        <p key={i} style={{ color: S.text, fontSize: 11, lineHeight: 1.65, opacity: i > 0 ? 0.7 : 1 }}>
+          {line}
+        </p>
+      ))}
     </div>
   );
 }

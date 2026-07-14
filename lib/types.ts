@@ -70,3 +70,19 @@ export type CalendarEntry = {
   opponent: string;
   isHome: boolean;
 };
+
+export type Fixture = {
+  home: string;
+  away: string;
+};
+
+export type RoundMatchResult = {
+  home: string;
+  away: string;
+  homeScore: number;
+  awayScore: number;
+};
+
+export type ClubUpgrade = "stadium" | "recruiter" | "trainer" | "marketing";
+
+export type UpgradeGrades = Record<ClubUpgrade, 0 | 1 | 2 | 3>;

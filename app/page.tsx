@@ -7,10 +7,12 @@ import { SeasonScreen } from "@/components/SeasonScreen";
 import { PlayoffsScreen } from "@/components/PlayoffsScreen";
 import { RecapScreen } from "@/components/RecapScreen";
 import { MercatoScreen } from "@/components/MercatoScreen";
-import { BlackoutTransition } from "@/components/BlackoutTransition";
-import { clubs, buildCalendar } from "@/lib/data";
-import { generateLeagueResults } from "@/lib/simulation";
-import type { CalendarEntry, MatchEvent, Player, PlayoffSummary, Screen, SeasonRecord } from "@/lib/types";
+import { ScreenTransition } from "@/components/ScreenTransition";
+import { clubs, OPPONENTS } from "@/lib/data";
+import { simulateLeagueMatch } from "@/lib/simulation";
+import { generateSchedule, extractCalendar } from "@/lib/schedule";
+import { defaultUpgradeGrades, getWinIncome, getStadiumBonus, LEAGUE_PRIZES, getPlayoffPrize } from "@/lib/budget";
+import type { CalendarEntry, ClubUpgrade, Fixture, MatchEvent, Player, PlayoffSummary, RoundMatchResult, Screen, SeasonRecord, UpgradeGrades } from "@/lib/types";
 
 const TOTAL_MATCHES = 26;
 
@@ -57,17 +59,36 @@ export default function Home() {
   const [awaitingNewClub, setAwaitingNewClub] = useState(true);
 
   const [calendar, setCalendar] = useState<CalendarEntry[]>([]);
-  const [leagueResults, setLeagueResults] = useState<Record<string, number[]>>({});
+  const [fixtures, setFixtures] = useState<Fixture[][]>([]);
+  const [roundResults, setRoundResults] = useState<RoundMatchResult[][]>([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
   const [seasonRevealed, setSeasonRevealed] = useState<string[]>([]);
   const [regularSeasonDone, setRegularSeasonDone] = useState(false);
   const [qualifiedTeams, setQualifiedTeams] = useState<string[]>([]);
   const [myFinalPosition, setMyFinalPosition] = useState(0);
   const [playoffSummary, setPlayoffSummary] = useState<PlayoffSummary | null>(null);
-  const [transitioning, setTransitioning] = useState(false);
+  const [transitioning, setTransitioning]   = useState(false);
+  const [transitionLabel, setTransitionLabel] = useState("");
+  const [transitionColor, setTransitionColor] = useState("#D4AF37");
+  const transitionRevealRef = useRef<(() => void) | null>(null);
+
+  function triggerTransition(label: string, color: string, onReveal: () => void) {
+    transitionRevealRef.current = onReveal;
+    setTransitionLabel(label);
+    setTransitionColor(color);
+    setTransitioning(true);
+  }
   const [seasonNumber, setSeasonNumber] = useState(1);
   const [seasonTries, setSeasonTries] = useState<Record<string, number>>({});
   const [seasonHistory, setSeasonHistory] = useState<SeasonRecord[]>([]);
+
+  // ── Budget & club upgrades ────────────────────────────────────
+  const [budget, setBudget] = useState(0);
+  const [upgrades, setUpgrades] = useState<UpgradeGrades>(defaultUpgradeGrades);
+  // Season-scoped financial counters (reset each new season, budget itself carries over)
+  const [seasonMatchIncome, setSeasonMatchIncome] = useState(0);
+  const [seasonLeaguePrize, setSeasonLeaguePrize] = useState(0);
+  const [seasonPlayoffPrize, setSeasonPlayoffPrize] = useState(0);
   const currentRecordRef = useRef<SeasonRecord | null>(null);
 
   const teamRating = useMemo(() => {
@@ -122,18 +143,26 @@ export default function Home() {
   }
 
   function handleStartDraft() {
-    setScreen("draft");
+    triggerTransition("RECRUTEMENT", "#D4AF37", () => setScreen("draft"));
+  }
+
+  function buildNewSeason() {
+    const schedule = generateSchedule([myTeamName, ...OPPONENTS]);
+    const cal = extractCalendar(schedule, myTeamName);
+    return { schedule, cal };
   }
 
   function handleStartSeason() {
-    const cal = buildCalendar();
-    const opponents = [...new Set(cal.map((e) => e.opponent))];
-    setCalendar(cal);
-    setLeagueResults(generateLeagueResults(opponents));
-    setCurrentMatchIndex(0);
-    setSeasonRevealed([]);
-    setRegularSeasonDone(false);
-    setScreen("season");
+    const { schedule, cal } = buildNewSeason();
+    triggerTransition("SAISON 1", "#D4AF37", () => {
+      setFixtures(schedule);
+      setCalendar(cal);
+      setRoundResults([]);
+      setCurrentMatchIndex(0);
+      setSeasonRevealed([]);
+      setRegularSeasonDone(false);
+      setScreen("season");
+    });
   }
 
   function handleMatchComplete(resultLine: string, events: MatchEvent[]) {
@@ -143,7 +172,34 @@ export default function Home() {
         const name = e.text.replace("Essai de ", "");
         setSeasonTries((prev) => ({ ...prev, [name]: (prev[name] ?? 0) + 1 }));
       });
+
+    if (resultLine.startsWith("✦")) {
+      const income = getWinIncome(upgrades.marketing);
+      setBudget((prev) => prev + income);
+      setSeasonMatchIncome((prev) => prev + income);
+    }
+
+    // Build the player's RoundMatchResult from the result line
+    const [, myS, oppS, opponent, homeFlag] = resultLine.split("|");
+    const myScore = parseInt(myS);
+    const oppScore = parseInt(oppS);
+    const isHome = homeFlag === "1";
+    const playerResult: RoundMatchResult = {
+      home: isHome ? myTeamName : opponent,
+      away: isHome ? opponent : myTeamName,
+      homeScore: isHome ? myScore : oppScore,
+      awayScore: isHome ? oppScore : myScore,
+    };
+
+    // Simulate the other 6 matches of this round
+    const roundIdx = currentMatchIndex;
+    const roundFixtures = fixtures[roundIdx] ?? [];
+    const otherResults: RoundMatchResult[] = roundFixtures
+      .filter(f => f.home !== myTeamName && f.away !== myTeamName)
+      .map(f => simulateLeagueMatch(f.home, f.away));
+
     setSeasonRevealed((prev) => [...prev, resultLine]);
+    setRoundResults((prev) => [...prev, [playerResult, ...otherResults]]);
     setCurrentMatchIndex((prev) => {
       const next = prev + 1;
       if (next >= TOTAL_MATCHES) setRegularSeasonDone(true);
@@ -181,88 +237,132 @@ export default function Home() {
   }
 
   function handleGoToPlayoffs() {
-    const myWins = seasonRevealed.filter((r) => r.startsWith("✦")).length;
-    const myDraws = seasonRevealed.filter((r) => r.startsWith("◈")).length;
-
-    const rows = [
-      { name: myTeamName, points: myWins * 4 + myDraws * 2, won: myWins },
-      ...Object.entries(leagueResults).map(([team, pts]) => {
-        const won = pts.filter((p) => p === 4).length;
-        return { name: team, points: pts.reduce((s, p) => s + p, 0), won };
-      }),
-    ].sort((a, b) => b.points - a.points || b.won - a.won);
-
-    const top6 = rows.slice(0, 6).map((r) => r.name);
-    setQualifiedTeams(top6);
-    const pos = rows.findIndex((r) => r.name === myTeamName) + 1;
-    setMyFinalPosition(pos);
+    const standings = computeFinalStandings(roundResults, myTeamName);
+    const top6 = standings.slice(0, 6).map((r) => r.name);
+    const pos = standings.findIndex((r) => r.name === myTeamName) + 1;
+    const leaguePrize = LEAGUE_PRIZES[pos] ?? 0;
     if (!top6.includes(myTeamName)) {
       const record = buildSeasonRecord(seasonRevealed, seasonTries, pos, seasonNumber, "non-qualifié");
       currentRecordRef.current = record;
-      setSeasonHistory((prev) => [...prev, record]);
-      setPlayoffSummary({ outcome: "non-qualifié", matches: [] });
-      setScreen("recap");
+      triggerTransition("BILAN", "#D4AF37", () => {
+        setQualifiedTeams(top6);
+        setMyFinalPosition(pos);
+        setBudget((prev) => prev + leaguePrize);
+        setSeasonLeaguePrize(leaguePrize);
+        setSeasonHistory((prev) => [...prev, record]);
+        setPlayoffSummary({ outcome: "non-qualifié", matches: [] });
+        setScreen("recap");
+      });
     } else {
-      setTransitioning(true);
+      triggerTransition("PLAY-OFFS", "#D4AF37", () => {
+        setQualifiedTeams(top6);
+        setMyFinalPosition(pos);
+        setBudget((prev) => prev + leaguePrize);
+        setSeasonLeaguePrize(leaguePrize);
+        setScreen("playoffs");
+      });
     }
   }
 
+  function computeFinalStandings(results: RoundMatchResult[][], myName: string) {
+    const stats: Record<string, { won: number; drawn: number; lost: number }> = {};
+    for (const round of results) {
+      for (const m of round) {
+        if (!stats[m.home]) stats[m.home] = { won: 0, drawn: 0, lost: 0 };
+        if (!stats[m.away]) stats[m.away] = { won: 0, drawn: 0, lost: 0 };
+        if (m.homeScore > m.awayScore) {
+          stats[m.home].won++; stats[m.away].lost++;
+        } else if (m.homeScore < m.awayScore) {
+          stats[m.away].won++; stats[m.home].lost++;
+        } else {
+          stats[m.home].drawn++; stats[m.away].drawn++;
+        }
+      }
+    }
+    return Object.entries(stats)
+      .map(([name, s]) => ({ name, points: s.won * 4 + s.drawn * 2, won: s.won, isMe: name === myName }))
+      .sort((a, b) => b.points - a.points || b.won - a.won);
+  }
+
   function handlePlayoffsComplete(summary: PlayoffSummary) {
+    const playoffPrize = getPlayoffPrize(summary.outcome, summary.eliminatedIn);
     const record = buildSeasonRecord(seasonRevealed, seasonTries, myFinalPosition, seasonNumber, summary.outcome);
     currentRecordRef.current = record;
-    setSeasonHistory((prev) => [...prev, record]);
-    setPlayoffSummary(summary);
-    setScreen("recap");
+    triggerTransition("BILAN", "#D4AF37", () => {
+      setBudget((prev) => prev + playoffPrize);
+      setSeasonPlayoffPrize(playoffPrize);
+      setSeasonHistory((prev) => [...prev, record]);
+      setPlayoffSummary(summary);
+      setScreen("recap");
+    });
   }
 
   function handleNextSeason() {
-    setCalendar([]);
-    setLeagueResults({});
-    setCurrentMatchIndex(0);
-    setSeasonRevealed([]);
-    setRegularSeasonDone(false);
-    setQualifiedTeams([]);
-    // myFinalPosition is intentionally kept: the mercato uses it to compute the rating cap.
-    // It will be overwritten by handleGoToPlayoffs() at the end of the new season.
-    setPlayoffSummary(null);
-    setSeasonTries({});
-    setSeasonNumber((n) => n + 1);
-    setScreen("mercato");
+    triggerTransition("INTER-SAISON", "#8FAFC8", () => {
+      setCalendar([]);
+      setFixtures([]);
+      setRoundResults([]);
+      setCurrentMatchIndex(0);
+      setSeasonRevealed([]);
+      setRegularSeasonDone(false);
+      setQualifiedTeams([]);
+      // myFinalPosition kept: mercato uses it for rating cap; overwritten at end of new season.
+      setPlayoffSummary(null);
+      setSeasonTries({});
+      setSeasonNumber((n) => n + 1);
+      setSeasonMatchIncome(0);
+      setSeasonLeaguePrize(0);
+      setSeasonPlayoffPrize(0);
+      setScreen("mercato");
+    });
   }
 
-  function handleMercatoComplete(newPlayers: Player[]) {
-    const cal = buildCalendar();
-    const opponents = [...new Set(cal.map((e) => e.opponent))];
-    setSelectedPlayers(newPlayers);
-    setCalendar(cal);
-    setLeagueResults(generateLeagueResults(opponents));
-    setCurrentMatchIndex(0);
-    setSeasonRevealed([]);
-    setRegularSeasonDone(false);
-    setScreen("season");
+  function handleMercatoComplete(newPlayers: Player[], newBudget: number, newUpgrades: UpgradeGrades) {
+    const { schedule, cal } = buildNewSeason();
+    triggerTransition(`SAISON ${seasonNumber}`, "#D4AF37", () => {
+      setSelectedPlayers(newPlayers);
+      setFixtures(schedule);
+      setCalendar(cal);
+      setRoundResults([]);
+      setCurrentMatchIndex(0);
+      setSeasonRevealed([]);
+      setRegularSeasonDone(false);
+      setBudget(newBudget);
+      setUpgrades(newUpgrades);
+      setScreen("season");
+    });
   }
 
   function handleReplay() {
     const keys = Object.keys(clubs);
-    setScreen("home");
-    setSelectedPlayers([]);
-    setSameClubRerolls(3);
-    setSameSeasonRerolls(3);
-    setShownClubs(new Set());
-    setAwaitingNewClub(true);
-    setCurrentClub(keys[Math.floor(Math.random() * keys.length)]);
-    setCalendar([]);
-    setLeagueResults({});
-    setCurrentMatchIndex(0);
-    setSeasonRevealed([]);
-    setRegularSeasonDone(false);
-    setQualifiedTeams([]);
-    setMyFinalPosition(0);
-    setPlayoffSummary(null);
-    setSeasonNumber(1);
-    setSeasonTries({});
-    setSeasonHistory([]);
-    currentRecordRef.current = null;
+    const newClub = keys[Math.floor(Math.random() * keys.length)];
+    triggerTransition("NOUVEAU JEU", "#D4AF37", () => {
+      setScreen("home");
+      setSelectedPlayers([]);
+      setSameClubRerolls(3);
+      setSameSeasonRerolls(3);
+      setShownClubs(new Set());
+      setAwaitingNewClub(true);
+      setCurrentClub(newClub);
+      setCalendar([]);
+      setFixtures([]);
+      setRoundResults([]);
+      setCurrentMatchIndex(0);
+      setSeasonRevealed([]);
+      setRegularSeasonDone(false);
+      setQualifiedTeams([]);
+      setMyFinalPosition(0);
+      setPlayoffSummary(null);
+      setSeasonNumber(1);
+      setSeasonTries({});
+      setSeasonHistory([]);
+      setBudget(0);
+      setUpgrades(defaultUpgradeGrades);
+      setSeasonMatchIncome(0);
+      setSeasonLeaguePrize(0);
+      setSeasonPlayoffPrize(0);
+      currentRecordRef.current = null;
+    });
   }
 
   let content: React.ReactNode;
@@ -291,11 +391,14 @@ export default function Home() {
         myTeamName={myTeamName}
         teamRating={teamRating}
         selectedPlayers={selectedPlayers}
-        leagueResults={leagueResults}
+        roundResults={roundResults}
         currentMatchIndex={currentMatchIndex}
         seasonRevealed={seasonRevealed}
         regularSeasonDone={regularSeasonDone}
         calendar={calendar}
+        budget={budget}
+        winIncome={getWinIncome(upgrades.marketing)}
+        stadiumBonus={getStadiumBonus(upgrades.stadium)}
         onMatchComplete={handleMatchComplete}
         onGoToRanking={handleGoToPlayoffs}
       />
@@ -326,6 +429,10 @@ export default function Home() {
         playoffSummary={playoffSummary}
         seasonHistory={seasonHistory}
         currentRecord={currentRecordRef.current}
+        budget={budget}
+        seasonMatchIncome={seasonMatchIncome}
+        seasonLeaguePrize={seasonLeaguePrize}
+        seasonPlayoffPrize={seasonPlayoffPrize}
         onReplay={handleReplay}
         onNextSeason={handleNextSeason}
       />
@@ -336,6 +443,8 @@ export default function Home() {
         selectedPlayers={selectedPlayers}
         seasonNumber={seasonNumber}
         myFinalPosition={myFinalPosition}
+        budget={budget}
+        upgrades={upgrades}
         onComplete={handleMercatoComplete}
       />
     );
@@ -352,8 +461,10 @@ export default function Home() {
   return (
     <div data-theme={theme}>
       {transitioning && (
-        <BlackoutTransition
-          onReveal={() => setScreen("playoffs")}
+        <ScreenTransition
+          label={transitionLabel}
+          color={transitionColor}
+          onReveal={() => { transitionRevealRef.current?.(); transitionRevealRef.current = null; }}
           onDone={() => setTransitioning(false)}
         />
       )}

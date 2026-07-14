@@ -2,7 +2,8 @@
 
 import { useMemo, useRef, useState } from "react";
 import { simulateMatch } from "@/lib/simulation";
-import type { CalendarEntry, MatchEvent, MatchResult, Player } from "@/lib/types";
+import { formatBudget, formatBudgetDelta } from "@/lib/budget";
+import type { CalendarEntry, MatchEvent, MatchResult, Player, RoundMatchResult } from "@/lib/types";
 
 const TOTAL_MATCHES = 26;
 const stripSeason = (s: string) => s.replace(/\s\d{2}-\d{2}$/, "");
@@ -16,11 +17,14 @@ interface SeasonScreenProps {
   myTeamName: string;
   teamRating: number;
   selectedPlayers: Player[];
-  leagueResults: Record<string, number[]>;
+  roundResults: RoundMatchResult[][];
   currentMatchIndex: number;
   seasonRevealed: string[];
   regularSeasonDone: boolean;
   calendar: CalendarEntry[];
+  budget: number;
+  winIncome: number;
+  stadiumBonus: number;
   onMatchComplete: (resultLine: string, events: MatchEvent[]) => void;
   onGoToRanking: () => void;
 }
@@ -31,9 +35,9 @@ interface StandingRow {
 }
 
 export function SeasonScreen({
-  myTeamName, teamRating, selectedPlayers, leagueResults,
+  myTeamName, teamRating, selectedPlayers, roundResults,
   currentMatchIndex, seasonRevealed, regularSeasonDone,
-  calendar, onMatchComplete, onGoToRanking,
+  calendar, budget, winIncome, stadiumBonus, onMatchComplete, onGoToRanking,
 }: SeasonScreenProps) {
   /* ── live match ───────────────────────────────────────── */
   const [matchMinute, setMatchMinute] = useState(0);
@@ -61,23 +65,27 @@ export function SeasonScreen({
   const played = seasonRevealed.length;
 
   const standings = useMemo<StandingRow[]>(() => {
-    const myWins   = seasonRevealed.filter(r => r.startsWith("✦")).length;
-    const myDraws  = seasonRevealed.filter(r => r.startsWith("◈")).length;
-    const myLosses = seasonRevealed.filter(r => r.startsWith("✕")).length;
-    const rows: StandingRow[] = [
-      { name: myTeamName, played, won: myWins, drawn: myDraws, lost: myLosses,
-        points: myWins * 4 + myDraws * 2, isMe: true },
-      ...Object.entries(leagueResults).map(([team, pts]) => {
-        const slice = pts.slice(0, played);
-        const won   = slice.filter(p => p === 4).length;
-        const drawn = slice.filter(p => p === 2).length;
-        const lost  = slice.filter(p => p === 0).length;
-        return { name: team, played: slice.length, won, drawn, lost,
-          points: slice.reduce((s, p) => s + p, 0), isMe: false };
-      }),
-    ];
-    return rows.sort((a, b) => b.points - a.points || b.won - a.won);
-  }, [seasonRevealed, played, leagueResults, myTeamName]);
+    const stats: Record<string, { won: number; drawn: number; lost: number }> = {};
+    for (const round of roundResults) {
+      for (const m of round) {
+        if (!stats[m.home]) stats[m.home] = { won: 0, drawn: 0, lost: 0 };
+        if (!stats[m.away]) stats[m.away] = { won: 0, drawn: 0, lost: 0 };
+        if (m.homeScore > m.awayScore) {
+          stats[m.home].won++; stats[m.away].lost++;
+        } else if (m.homeScore < m.awayScore) {
+          stats[m.away].won++; stats[m.home].lost++;
+        } else {
+          stats[m.home].drawn++; stats[m.away].drawn++;
+        }
+      }
+    }
+    return Object.entries(stats).map(([name, s]) => ({
+      name, played: s.won + s.drawn + s.lost,
+      won: s.won, drawn: s.drawn, lost: s.lost,
+      points: s.won * 4 + s.drawn * 2,
+      isMe: name === myTeamName,
+    })).sort((a, b) => b.points - a.points || b.won - a.won);
+  }, [roundResults, myTeamName]);
 
   const myPosition = standings.findIndex(r => r.isMe) + 1;
 
@@ -106,7 +114,7 @@ export function SeasonScreen({
     if (intervalRef.current) clearInterval(intervalRef.current);
     const idx   = currentMatchIndex;
     const entry = calendar[idx];
-    const match = simulateMatch(teamRating, entry, selectedPlayers, idx + 1);
+    const match = simulateMatch(teamRating, entry, selectedPlayers, idx + 1, stadiumBonus);
     currentMatchRef.current  = match;
     currentEntryRef.current  = entry;
     setMatchMinute(0);
@@ -155,7 +163,7 @@ export function SeasonScreen({
     } else {
       const entry = calendar[idx];
       if (!entry) return;
-      const match = simulateMatch(teamRating, entry, selectedPlayers, idx + 1);
+      const match = simulateMatch(teamRating, entry, selectedPlayers, idx + 1, stadiumBonus);
       setStoredEvents(prev => ({ ...prev, [idx]: match.events }));
       onMatchComplete(buildResultLine(match, entry.isHome), match.events);
     }
@@ -189,11 +197,17 @@ export function SeasonScreen({
             <p className="text-c-fg font-black text-xs uppercase tracking-wide">Saison régulière</p>
           </div>
         </div>
-        <div className="text-right">
-          <p className="text-[var(--c-muted)] uppercase tracking-wider text-[8px] mb-0.5">Journée</p>
-          <p className="text-c-gold font-black text-xl">
-            {played}<span className="text-[var(--c-faint)] text-sm font-bold"> / {TOTAL_MATCHES}</span>
-          </p>
+        <div className="flex items-center gap-5">
+          <div className="text-right">
+            <p className="text-[var(--c-muted)] uppercase tracking-wider text-[8px] mb-0.5">Budget</p>
+            <p className="text-c-gold font-black text-sm">{formatBudget(budget)}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-[var(--c-muted)] uppercase tracking-wider text-[8px] mb-0.5">Journée</p>
+            <p className="text-c-gold font-black text-xl">
+              {played}<span className="text-[var(--c-faint)] text-sm font-bold"> / {TOTAL_MATCHES}</span>
+            </p>
+          </div>
         </div>
       </header>
 
@@ -303,6 +317,9 @@ export function SeasonScreen({
                 {[...seasonRevealed].reverse().map((line, ri) => {
                   const idx = played - 1 - ri;
                   const [icon, myS, oppS, opponent, homeFlag] = line.split("|");
+                  const otherResults = (roundResults[idx] ?? []).filter(
+                    r => r.home !== myTeamName && r.away !== myTeamName
+                  );
                   return (
                     <CompletedMatchRow
                       key={idx}
@@ -314,6 +331,8 @@ export function SeasonScreen({
                       oppScore={parseInt(oppS)}
                       wasHome={homeFlag === "1"}
                       events={storedEvents[idx] ?? []}
+                      otherResults={otherResults}
+                      winIncomeLabel={icon === "✦" ? formatBudgetDelta(winIncome) : undefined}
                       expanded={expandedIndices.has(idx)}
                       onToggle={() => toggleExpanded(idx)}
                     />
@@ -493,13 +512,15 @@ interface CompletedMatchRowProps {
   oppScore: number;
   wasHome: boolean;
   events: MatchEvent[];
+  otherResults: RoundMatchResult[];
+  winIncomeLabel?: string;
   expanded: boolean;
   onToggle: () => void;
 }
 
 function CompletedMatchRow({
   matchNumber, icon, myTeamName, opponent,
-  myScore, oppScore, wasHome, events, expanded, onToggle,
+  myScore, oppScore, wasHome, events, otherResults, winIncomeLabel, expanded, onToggle,
 }: CompletedMatchRowProps) {
   const isWin  = icon === "✦";
   const isDraw = icon === "◈";
@@ -540,20 +561,56 @@ function CompletedMatchRow({
           </span>
         </div>
 
-        {events.length > 0 && (
-          <span className={`text-[8px] shrink-0 transition-colors ${
-            expanded ? "text-c-gold/50" : "text-[var(--c-faint)] group-hover:text-[var(--c-muted)]"
-          }`}>
-            {expanded ? "▴" : "▾"}
+        {winIncomeLabel && (
+          <span className="text-[8px] font-black text-c-gold/70 shrink-0 tabular-nums">
+            {winIncomeLabel}
           </span>
         )}
+
+        <span className={`text-[8px] shrink-0 transition-colors ${
+          expanded ? "text-c-gold/50" : "text-[var(--c-faint)] group-hover:text-[var(--c-muted)]"
+        }`}>
+          {expanded ? "▴" : "▾"}
+        </span>
       </button>
 
-      {expanded && events.length > 0 && (
+      {expanded && (
         <div className="border-t border-[var(--c-border-lo)]">
-          <MatchEventsList events={events} isHome={wasHome} />
+          {events.length > 0 && <MatchEventsList events={events} isHome={wasHome} />}
+          {otherResults.length > 0 && <OtherResultsList results={otherResults} />}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────
+   OtherResultsList
+───────────────────────────────────────────────────────────── */
+
+function OtherResultsList({ results }: { results: RoundMatchResult[] }) {
+  return (
+    <div className="px-3 py-3 border-t border-[var(--c-border-lo)] space-y-1">
+      <p className="text-[var(--c-faint)] uppercase tracking-[0.3em] text-[8px] font-bold mb-2">
+        Autres matchs de la journée
+      </p>
+      {results.map((r, i) => {
+        const homeWon = r.homeScore > r.awayScore;
+        const awayWon = r.awayScore > r.homeScore;
+        return (
+          <div key={i} className="flex items-center gap-1.5">
+            <span className={`flex-1 text-right text-[9px] font-black truncate ${homeWon ? "text-c-fg/70" : "text-[var(--c-faint)]"}`}>
+              {stripSeason(r.home)}
+            </span>
+            <span className="text-[var(--c-faint)] font-black text-[9px] tabular-nums shrink-0 w-12 text-center">
+              {r.homeScore}–{r.awayScore}
+            </span>
+            <span className={`flex-1 text-[9px] font-black truncate ${awayWon ? "text-c-fg/70" : "text-[var(--c-faint)]"}`}>
+              {stripSeason(r.away)}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

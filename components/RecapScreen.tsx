@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { formatBudget, formatBudgetDelta } from "@/lib/budget";
 import type { Player, PlayoffSummary, SeasonRecord } from "@/lib/types";
 
 interface Props {
@@ -14,6 +15,10 @@ interface Props {
   playoffSummary: PlayoffSummary;
   seasonHistory: SeasonRecord[];
   currentRecord: SeasonRecord | null;
+  budget: number;
+  seasonMatchIncome: number;
+  seasonLeaguePrize: number;
+  seasonPlayoffPrize: number;
   onReplay: () => void;
   onNextSeason: () => void;
 }
@@ -115,6 +120,10 @@ export function RecapScreen({
   playoffSummary,
   seasonHistory,
   currentRecord,
+  budget,
+  seasonMatchIncome,
+  seasonLeaguePrize,
+  seasonPlayoffPrize,
   onReplay,
   onNextSeason,
 }: Props) {
@@ -259,6 +268,41 @@ export function RecapScreen({
             </>
           )}
         </div>
+
+        {/* Financial summary */}
+        {(seasonMatchIncome !== 0 || seasonLeaguePrize !== 0 || seasonPlayoffPrize !== 0) && (
+          <div className="flex-shrink-0 px-5 py-3 border-b border-[var(--c-border-lo)]">
+            <p className="text-[var(--c-faint)] uppercase tracking-[0.4em] text-[7px] font-bold mb-2">
+              Bilan financier
+            </p>
+            <div className="space-y-1.5">
+              {seasonMatchIncome > 0 && (
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[var(--c-muted)] text-[9px] uppercase tracking-wide">Revenus matchs</span>
+                  <span className="text-c-fg font-black text-[10px] tabular-nums">{formatBudgetDelta(seasonMatchIncome)}</span>
+                </div>
+              )}
+              {seasonLeaguePrize !== 0 && (
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[var(--c-muted)] text-[9px] uppercase tracking-wide">Prime championnat</span>
+                  <span className={`font-black text-[10px] tabular-nums ${seasonLeaguePrize >= 0 ? "text-c-fg" : "text-red-400"}`}>
+                    {formatBudgetDelta(seasonLeaguePrize)}
+                  </span>
+                </div>
+              )}
+              {seasonPlayoffPrize > 0 && (
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[var(--c-muted)] text-[9px] uppercase tracking-wide">Prime play-offs</span>
+                  <span className="text-c-fg font-black text-[10px] tabular-nums">{formatBudgetDelta(seasonPlayoffPrize)}</span>
+                </div>
+              )}
+              <div className="flex items-baseline justify-between pt-1 border-t border-[var(--c-border-lo)]">
+                <span className="text-[var(--c-muted)] text-[9px] uppercase tracking-wide font-bold">Budget total</span>
+                <span className="text-c-gold font-black text-sm tabular-nums">{formatBudget(budget)}</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Records section — above XV so visible without scrolling */}
         {recordRows.length > 0 && (

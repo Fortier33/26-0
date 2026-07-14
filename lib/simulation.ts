@@ -1,4 +1,4 @@
-import type { CalendarEntry, MatchEvent, MatchResult, Player, ScoringAction } from "./types";
+import type { CalendarEntry, MatchEvent, MatchResult, Player, RoundMatchResult, ScoringAction } from "./types";
 import { getClubRating, teamStrengths } from "./data";
 
 const HOME_BONUS = 7;
@@ -142,6 +142,23 @@ function assignMatchPoints(
   }
 }
 
+/** Simulate a single league match between two named clubs (home advantage included). */
+export function simulateLeagueMatch(home: string, away: string): RoundMatchResult {
+  const homeR = getTeamStrength(home) + HOME_BONUS;
+  const awayR = getTeamStrength(away);
+
+  const [homeCount, awayCount] = buildMatchCounts(homeR, awayR);
+  let homeScore = actionsToScore(randomActions(homeCount));
+  let awayScore = actionsToScore(randomActions(awayCount));
+
+  // Draws are very rare in rugby (~1-2%). Break ties 88% of the time.
+  if (homeScore === awayScore && Math.random() < 0.88) {
+    if (Math.random() > 0.5) homeScore += 3; else awayScore += 3;
+  }
+
+  return { home, away, homeScore, awayScore };
+}
+
 export function generateLeagueResults(opponents: string[]): Record<string, number[]> {
   const results: Record<string, number[]> = {};
   for (const team of opponents) results[team] = [];
@@ -172,9 +189,10 @@ export function simulateMatch(
   entry: CalendarEntry,
   selectedPlayers: Player[],
   matchNumber: number,
+  stadiumBonus = 0,
 ): MatchResult {
   const opponentRating = getTeamStrength(entry.opponent);
-  const myEffective = myTeamRating + (entry.isHome ? HOME_BONUS : 0);
+  const myEffective = myTeamRating * (entry.isHome ? 1 + stadiumBonus : 1) + (entry.isHome ? HOME_BONUS : 0);
   const oppEffective = opponentRating + (entry.isHome ? 0 : HOME_BONUS);
 
   const [myCount, oppCount] = buildMatchCounts(myEffective, oppEffective);
