@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { simulateMatch } from "@/lib/simulation";
 import { formatBudget, formatBudgetDelta } from "@/lib/budget";
+import { Field } from "@/components/Field";
 import type { CalendarEntry, MatchEvent, MatchResult, Player, RoundMatchResult } from "@/lib/types";
 
 const TOTAL_MATCHES = 26;
@@ -25,6 +26,8 @@ interface SeasonScreenProps {
   budget: number;
   winIncome: number;
   stadiumBonus: number;
+  transportBonus: number;
+  isCareerMode: boolean;
   onMatchComplete: (resultLine: string, events: MatchEvent[]) => void;
   onGoToRanking: () => void;
 }
@@ -37,7 +40,8 @@ interface StandingRow {
 export function SeasonScreen({
   myTeamName, teamRating, selectedPlayers, roundResults,
   currentMatchIndex, seasonRevealed, regularSeasonDone,
-  calendar, budget, winIncome, stadiumBonus, onMatchComplete, onGoToRanking,
+  calendar, budget, winIncome, stadiumBonus, transportBonus, isCareerMode,
+  onMatchComplete, onGoToRanking,
 }: SeasonScreenProps) {
   /* ── live match ───────────────────────────────────────── */
   const [matchMinute, setMatchMinute] = useState(0);
@@ -50,7 +54,7 @@ export function SeasonScreen({
   const [storedEvents, setStoredEvents] = useState<Record<number, MatchEvent[]>>({});
   const [expandedIndices, setExpandedIndices] = useState<Set<number>>(new Set());
   const [activeEventsOpen, setActiveEventsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"matchs" | "classement">("matchs");
+  const [activeTab, setActiveTab] = useState<"matchs" | "classement" | "effectif">("matchs");
   const [matchSpeed, setMatchSpeed] = useState<"normal" | "fast" | "ultra">("normal");
 
   /* ── refs ─────────────────────────────────────────────── */
@@ -114,7 +118,7 @@ export function SeasonScreen({
     if (intervalRef.current) clearInterval(intervalRef.current);
     const idx   = currentMatchIndex;
     const entry = calendar[idx];
-    const match = simulateMatch(teamRating, entry, selectedPlayers, idx + 1, stadiumBonus);
+    const match = simulateMatch(teamRating, entry, selectedPlayers, idx + 1, stadiumBonus, transportBonus);
     currentMatchRef.current  = match;
     currentEntryRef.current  = entry;
     setMatchMinute(0);
@@ -163,7 +167,7 @@ export function SeasonScreen({
     } else {
       const entry = calendar[idx];
       if (!entry) return;
-      const match = simulateMatch(teamRating, entry, selectedPlayers, idx + 1, stadiumBonus);
+      const match = simulateMatch(teamRating, entry, selectedPlayers, idx + 1, stadiumBonus, transportBonus);
       setStoredEvents(prev => ({ ...prev, [idx]: match.events }));
       onMatchComplete(buildResultLine(match, entry.isHome), match.events);
     }
@@ -193,15 +197,17 @@ export function SeasonScreen({
           </span>
           <div className="w-px h-7 bg-[var(--c-border)]" />
           <div>
-            <p className="text-c-gold uppercase tracking-[0.35em] text-[8px] font-bold">Top 14 · 2025-2026</p>
+            <p className="text-c-gold uppercase tracking-[0.35em] text-[8px] font-bold">Top 14</p>
             <p className="text-c-fg font-black text-xs uppercase tracking-wide">Saison régulière</p>
           </div>
         </div>
         <div className="flex items-center gap-5">
-          <div className="text-right">
-            <p className="text-[var(--c-muted)] uppercase tracking-wider text-[8px] mb-0.5">Budget</p>
-            <p className="text-c-gold font-black text-sm">{formatBudget(budget)}</p>
-          </div>
+          {isCareerMode && (
+            <div className="text-right">
+              <p className="text-[var(--c-muted)] uppercase tracking-wider text-[8px] mb-0.5">Budget</p>
+              <p className="text-c-gold font-black text-sm">{formatBudget(budget)}</p>
+            </div>
+          )}
           <div className="text-right">
             <p className="text-[var(--c-muted)] uppercase tracking-wider text-[8px] mb-0.5">Journée</p>
             <p className="text-c-gold font-black text-xl">
@@ -218,12 +224,12 @@ export function SeasonScreen({
 
       {/* Tabs */}
       <div className="flex border-b border-[var(--c-border)] flex-shrink-0">
-        {(["matchs", "classement"] as const).map(tab => (
+        {(["matchs", "classement", "effectif"] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={`flex-1 py-3 text-[11px] font-black uppercase tracking-[0.2em] transition-colors ${
               activeTab === tab ? "text-c-gold border-b-2 border-c-gold" : "text-[var(--c-muted)]"
             }`}>
-            {tab === "matchs" ? "Matchs" : `Classement${myPosition > 0 ? ` · ${myPosition}e` : ""}`}
+            {tab === "matchs" ? "Matchs" : tab === "classement" ? `Classement${myPosition > 0 ? ` · ${myPosition}e` : ""}` : "Effectif"}
           </button>
         ))}
       </div>
@@ -277,6 +283,7 @@ export function SeasonScreen({
                 oppScore={liveOppScore}
                 liveEvents={liveEvents}
                 eventsOpen={activeEventsOpen}
+                isCareerMode={isCareerMode}
                 onStart={startMatch}
                 onSkip={skipCurrentMatch}
                 onToggleEvents={() => setActiveEventsOpen(v => !v)}
@@ -297,7 +304,7 @@ export function SeasonScreen({
                 au classement final
               </p>
               <button onClick={onGoToRanking}
-                className="w-full bg-c-gold hover:bg-[#F5F0E8] text-black font-black uppercase tracking-[0.2em] text-sm py-3.5 transition-colors">
+                className={`w-full bg-c-gold ${isCareerMode ? "hover:bg-[#A8C4D8]" : "hover:bg-[#F5F0E8]"} text-black font-black uppercase tracking-[0.2em] text-sm py-3.5 transition-colors`}>
                 {myPosition <= 6 ? "Play-offs →" : "Voir récap saison →"}
               </button>
             </div>
@@ -332,7 +339,7 @@ export function SeasonScreen({
                       wasHome={homeFlag === "1"}
                       events={storedEvents[idx] ?? []}
                       otherResults={otherResults}
-                      winIncomeLabel={icon === "✦" ? formatBudgetDelta(winIncome) : undefined}
+                      winIncomeLabel={isCareerMode && icon === "✦" ? formatBudgetDelta(winIncome) : undefined}
                       expanded={expandedIndices.has(idx)}
                       onToggle={() => toggleExpanded(idx)}
                     />
@@ -348,6 +355,13 @@ export function SeasonScreen({
       {activeTab === "classement" && (
         <div className="flex-1 overflow-y-auto">
           <StandingsTable standings={standings} played={played} />
+        </div>
+      )}
+
+      {/* ── EFFECTIF TAB ────────────────────────────────────── */}
+      {activeTab === "effectif" && (
+        <div className="flex-1 overflow-y-auto flex items-start justify-center">
+          <Field selectedPlayers={selectedPlayers} />
         </div>
       )}
     </main>
@@ -370,6 +384,7 @@ interface ActiveMatchCardProps {
   oppScore: number;
   liveEvents: MatchEvent[];
   eventsOpen: boolean;
+  isCareerMode: boolean;
   onStart: () => void;
   onSkip: () => void;
   onToggleEvents: () => void;
@@ -378,7 +393,7 @@ interface ActiveMatchCardProps {
 function ActiveMatchCard({
   matchNumber, entry, myTeamName, myPosition, opponentPosition,
   isRunning, minute, myScore, oppScore,
-  liveEvents, eventsOpen, onStart, onSkip, onToggleEvents,
+  liveEvents, eventsOpen, isCareerMode, onStart, onSkip, onToggleEvents,
 }: ActiveMatchCardProps) {
   const isHome     = entry.isHome;
   const oppName    = stripSeason(entry.opponent);
@@ -468,7 +483,7 @@ function ActiveMatchCard({
         {!isRunning ? (
           <>
             <button onClick={onStart}
-              className="flex-1 bg-c-gold hover:bg-[#F5F0E8] active:bg-c-gold focus:bg-c-gold text-black font-black uppercase tracking-[0.2em] text-xs py-3 transition-colors">
+              className={`flex-1 bg-c-gold ${isCareerMode ? "hover:bg-[#A8C4D8]" : "hover:bg-[#F5F0E8]"} active:bg-c-gold focus:bg-c-gold text-black font-black uppercase tracking-[0.2em] text-xs py-3 transition-colors`}>
               Démarrer →
             </button>
             <button onClick={onSkip} title="Simuler sans regarder"

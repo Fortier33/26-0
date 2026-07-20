@@ -321,7 +321,7 @@ function LeftPanel({
               onClick={onNewClub}
               className="w-full bg-c-gold hover:bg-[#F5F0E8] text-black font-black uppercase tracking-[0.2em] text-sm py-4 transition-colors"
             >
-              {isDraftStarted ? "↻ Nouvelle équipe" : "Commencer le draft →"}
+              {isDraftStarted ? "Passer au joueur suivant →" : "Commencer la Draft →"}
             </button>
           </div>
         ) : isSpinning ? null : (

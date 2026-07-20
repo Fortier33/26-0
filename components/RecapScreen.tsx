@@ -19,6 +19,7 @@ interface Props {
   seasonMatchIncome: number;
   seasonLeaguePrize: number;
   seasonPlayoffPrize: number;
+  isCareerMode: boolean;
   onReplay: () => void;
   onNextSeason: () => void;
 }
@@ -85,10 +86,14 @@ function buildRecordRows(history: SeasonRecord[]): RecordRow[] {
   }
 
   const bestAttack = history.reduce((b, s) => s.pointsScored > b.pointsScored ? s : b);
-  rows.push({ label: "Meilleure attaque", display: `${bestAttack.pointsScored} pts`, season: bestAttack.seasonNumber, isNew: bestAttack.seasonNumber === cur.seasonNumber });
+  const atkTotal = bestAttack.wins + bestAttack.draws + bestAttack.losses;
+  const atkAvg = atkTotal > 0 ? (bestAttack.pointsScored / atkTotal).toFixed(1) : "—";
+  rows.push({ label: "Meilleure attaque", display: `${bestAttack.pointsScored} pts · ${atkAvg}/match`, season: bestAttack.seasonNumber, isNew: bestAttack.seasonNumber === cur.seasonNumber });
 
   const bestDefense = history.reduce((b, s) => s.pointsConceded < b.pointsConceded ? s : b);
-  rows.push({ label: "Meilleure défense", display: `${bestDefense.pointsConceded} pts enc.`, season: bestDefense.seasonNumber, isNew: bestDefense.seasonNumber === cur.seasonNumber });
+  const defTotal = bestDefense.wins + bestDefense.draws + bestDefense.losses;
+  const defAvg = defTotal > 0 ? (bestDefense.pointsConceded / defTotal).toFixed(1) : "—";
+  rows.push({ label: "Meilleure défense", display: `${bestDefense.pointsConceded} enc. · ${defAvg}/match`, season: bestDefense.seasonNumber, isNew: bestDefense.seasonNumber === cur.seasonNumber });
 
   const mostWins = history.reduce((b, s) => s.wins > b.wins ? s : b);
   rows.push({ label: "Plus de victoires", display: `${mostWins.wins} V`, season: mostWins.seasonNumber, isNew: mostWins.seasonNumber === cur.seasonNumber });
@@ -124,6 +129,7 @@ export function RecapScreen({
   seasonMatchIncome,
   seasonLeaguePrize,
   seasonPlayoffPrize,
+  isCareerMode,
   onReplay,
   onNextSeason,
 }: Props) {
@@ -210,7 +216,7 @@ export function RecapScreen({
             26<span className="text-c-gold">-</span>0
           </span>
           <span className="text-c-gold text-[8px] uppercase tracking-[0.45em] font-bold">
-            Top 14 · 2025-26
+            Top 14
           </span>
         </div>
 
@@ -270,7 +276,7 @@ export function RecapScreen({
         </div>
 
         {/* Financial summary */}
-        {(seasonMatchIncome !== 0 || seasonLeaguePrize !== 0 || seasonPlayoffPrize !== 0) && (
+        {isCareerMode && (seasonMatchIncome !== 0 || seasonLeaguePrize !== 0 || seasonPlayoffPrize !== 0) && (
           <div className="flex-shrink-0 px-5 py-3 border-b border-[var(--c-border-lo)]">
             <p className="text-[var(--c-faint)] uppercase tracking-[0.4em] text-[7px] font-bold mb-2">
               Bilan financier
@@ -305,7 +311,7 @@ export function RecapScreen({
         )}
 
         {/* Records section — above XV so visible without scrolling */}
-        {recordRows.length > 0 && (
+        {isCareerMode && recordRows.length > 0 && (
           <div className="flex-shrink-0 px-5 pb-4 pt-3 border-t border-[var(--c-border-lo)]">
             <div className="flex items-center gap-3 mb-3">
               <p className="text-[var(--c-faint)] uppercase tracking-[0.4em] text-[7px] font-bold">
@@ -322,11 +328,11 @@ export function RecapScreen({
                 <div
                   key={row.label}
                   className="flex items-baseline justify-between py-[7px] border-b border-[var(--c-border-lo)]"
-                  style={row.isNew ? { background: "rgba(212,175,55,0.06)" } : undefined}
+                  style={row.isNew ? { background: isCareerMode ? "rgba(143,175,200,0.06)" : "rgba(212,175,55,0.06)" } : undefined}
                 >
                   <span
                     className="text-[9px] uppercase tracking-wide font-bold mr-2 shrink-0"
-                    style={{ color: row.isNew ? "#D4AF37" : "var(--c-muted)" }}
+                    style={{ color: row.isNew ? (isCareerMode ? "#8FAFC8" : "#D4AF37") : "var(--c-muted)" }}
                   >
                     {row.label}
                     {row.isNew && (
@@ -335,13 +341,13 @@ export function RecapScreen({
                   </span>
                   <span
                     className="text-[10px] font-black text-right truncate min-w-0"
-                    style={{ color: row.isNew ? "#D4AF37" : "var(--c-fg)" }}
+                    style={{ color: row.isNew ? (isCareerMode ? "#8FAFC8" : "#D4AF37") : "var(--c-fg)" }}
                   >
                     {row.display}
                     {row.season !== null && (
                       <span
                         className="ml-1 font-normal"
-                        style={{ fontSize: 8, color: row.isNew ? "rgba(212,175,55,0.7)" : "var(--c-faint)" }}
+                        style={{ fontSize: 8, color: row.isNew ? (isCareerMode ? "rgba(143,175,200,0.7)" : "rgba(212,175,55,0.7)") : "var(--c-faint)" }}
                       >
                         · S{row.season}
                       </span>
@@ -358,44 +364,49 @@ export function RecapScreen({
           <p className="text-[var(--c-faint)] uppercase tracking-[0.4em] text-[7px] font-bold mb-2">
             Mon XV
           </p>
-          <div className="grid grid-cols-2 gap-x-4">
-            {sortedSlots.map(({ player, jersey }) => {
-              const tier = player.rating >= 90 ? 3 : player.rating >= 85 ? 2 : 1;
-              const badgeBg = tier === 3 ? "#FFFFFF" : tier === 2 ? "#D4AF37" : "#0D0D0D";
-              const badgeFg = tier === 2 ? "#000000" : "#D4AF37";
-              const badgeBorder = tier === 3 ? "2px solid #D4AF37" : "none";
-              const lastName = player.name.split(" ").filter(Boolean).at(-1) ?? player.name;
+          <div className="flex gap-4">
+            {[sortedSlots.slice(0, 8), sortedSlots.slice(8)].map((col, ci) => (
+              <div key={ci} className="flex-1 min-w-0">
+                {col.map(({ player, jersey }) => {
+                  const tier = player.rating >= 90 ? 3 : player.rating >= 85 ? 2 : 1;
+                  const accentColor = isCareerMode ? "#8FAFC8" : "#D4AF37";
+                  const badgeBg = tier === 3 ? "#FFFFFF" : tier === 2 ? accentColor : "#0D0D0D";
+                  const badgeFg = tier === 2 ? "#000000" : accentColor;
+                  const badgeBorder = tier === 3 ? `2px solid ${accentColor}` : "none";
+                  const lastName = player.name.split(" ").filter(Boolean).at(-1) ?? player.name;
 
-              return (
-                <div
-                  key={jersey}
-                  className="flex items-center gap-2 py-[7px] border-b border-[var(--c-border-lo)]"
-                >
-                  <span className="text-[var(--c-faint)] text-[8px] font-black w-4 text-right tabular-nums shrink-0">
-                    {jersey}
-                  </span>
-                  <span className="flex-1 font-black text-[11px] truncate uppercase tracking-wide text-c-fg min-w-0 leading-normal">
-                    {lastName}
-                  </span>
-                  <span
-                    style={{
-                      background: badgeBg,
-                      color: badgeFg,
-                      border: badgeBorder,
-                      padding: "1px 5px",
-                      fontSize: 8,
-                      fontWeight: 900,
-                      lineHeight: "14px",
-                      minWidth: 24,
-                      textAlign: "center",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {player.rating}
-                  </span>
-                </div>
-              );
-            })}
+                  return (
+                    <div
+                      key={jersey}
+                      className="flex items-center gap-2 py-[7px] border-b border-[var(--c-border-lo)]"
+                    >
+                      <span className="text-[var(--c-faint)] text-[8px] font-black w-4 text-right tabular-nums shrink-0">
+                        {jersey}
+                      </span>
+                      <span className="flex-1 font-black text-[11px] truncate uppercase tracking-wide text-c-fg min-w-0 leading-normal">
+                        {lastName}
+                      </span>
+                      <span
+                        style={{
+                          background: badgeBg,
+                          color: badgeFg,
+                          border: badgeBorder,
+                          padding: "1px 5px",
+                          fontSize: 8,
+                          fontWeight: 900,
+                          lineHeight: "14px",
+                          minWidth: 24,
+                          textAlign: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {player.rating}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         </div>
 
@@ -414,12 +425,14 @@ export function RecapScreen({
 
       {/* Action buttons — outside shareable area, pinned at bottom */}
       <div className="flex-shrink-0 px-5 pb-6 pt-3 space-y-2 border-t border-[var(--c-border-lo)]">
-        <button
-          onClick={onNextSeason}
-          className="w-full bg-c-gold hover:bg-[#F5F0E8] text-black font-black uppercase tracking-[0.2em] text-xs py-4 transition-colors"
-        >
-          Saison suivante →
-        </button>
+        {isCareerMode && (
+          <button
+            onClick={onNextSeason}
+            className={`w-full bg-c-gold ${isCareerMode ? "hover:bg-[#A8C4D8]" : "hover:bg-[#F5F0E8]"} text-black font-black uppercase tracking-[0.2em] text-xs py-4 transition-colors`}
+          >
+            Saison suivante →
+          </button>
+        )}
         <button
           onClick={handleShare}
           disabled={isSharing}

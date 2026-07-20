@@ -14,6 +14,8 @@ interface Props {
   selectedPlayers: Player[];
   qualifiedTeams: string[];
   onComplete: (summary: PlayoffSummary) => void;
+  isCareerMode?: boolean;
+  mentalCoachBonus?: number;
 }
 
 type RoundMatch = {
@@ -44,7 +46,7 @@ function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualifiedTeams, onComplete }: Props) {
+export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualifiedTeams, onComplete, isCareerMode, mentalCoachBonus = 0 }: Props) {
   /* ── bracket state ───────────────────────────────────────── */
   const [qf1, setQf1] = useState<RoundMatch | null>(null);
   const [qf2, setQf2] = useState<RoundMatch | null>(null);
@@ -66,6 +68,7 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
   const [ovOppScore, setOvOppScore] = useState(0);
   const [ovEvents, setOvEvents] = useState<MatchEvent[]>([]);
   const [ovIsHome, setOvIsHome] = useState(true);
+  const [ovNeutral, setOvNeutral] = useState(false);
   const [ovOpponent, setOvOpponent] = useState("");
   const [ovDone, setOvDone] = useState(false);
   const [showHalftime, setShowHalftime] = useState(false);
@@ -87,8 +90,8 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
 
   /* ── helpers ─────────────────────────────────────────────── */
 
-  function simOther(home: string, away: string): RoundMatch {
-    const r = simulatePlayoffMatch(home, away);
+  function simOther(home: string, away: string, neutral = false): RoundMatch {
+    const r = simulatePlayoffMatch(home, away, neutral);
     return { home, away, homeScore: r.homeScore, awayScore: r.awayScore, winner: r.winner };
   }
 
@@ -134,12 +137,14 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
     });
   }
 
-  async function revealMyMatch(home: string, away: string, setter: (r: RoundMatch) => void, matchKey: string): Promise<RoundMatch> {
-    const isHome = home === myTeamName;
-    const opponent = isHome ? away : home;
-    const { firstHalf, simulateSecondHalf } = beginPlayoffMatch(teamRating, { opponent, isHome }, selectedPlayers);
+  async function revealMyMatch(home: string, away: string, setter: (r: RoundMatch) => void, matchKey: string, neutral = false): Promise<RoundMatch> {
+    const structurallyHome = home === myTeamName;
+    const isHome = !neutral && structurallyHome;
+    const opponent = structurallyHome ? away : home;
+    const { firstHalf, simulateSecondHalf } = beginPlayoffMatch(teamRating, { opponent, isHome }, selectedPlayers, neutral, mentalCoachBonus);
 
-    setOvIsHome(isHome);
+    setOvIsHome(structurallyHome);
+    setOvNeutral(neutral);
     setOvOpponent(opponent);
     setOvMinute(0);
     setOvMyScore(0);
@@ -172,8 +177,8 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
     setOverlay(false);
     setMyMatchEvents(prev => ({ ...prev, [matchKey]: allEventsRef.current }));
 
-    const homeScore = isHome ? rawMy : rawOpp;
-    const awayScore = isHome ? rawOpp : rawMy;
+    const homeScore = structurallyHome ? rawMy : rawOpp;
+    const awayScore = structurallyHome ? rawOpp : rawMy;
     const result: RoundMatch = { home, away, homeScore, awayScore, winner: homeScore > awayScore ? home : away };
     setter(result);
     await delay(400);
@@ -210,16 +215,16 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
     const sf1HasMe = sf1Home === myTeamName || sf1Away === myTeamName;
     const sf2HasMe = sf2Home === myTeamName || sf2Away === myTeamName;
     if (sf1HasMe) {
-      await revealOther("sf2", simOther(sf2Home, sf2Away), setSf2);
-      const r = await revealMyMatch(sf1Home, sf1Away, setSf1, "sf1");
+      await revealOther("sf2", simOther(sf2Home, sf2Away, true), setSf2);
+      const r = await revealMyMatch(sf1Home, sf1Away, setSf1, "sf1", true);
       if (r.winner !== myTeamName) setEliminatedIn("Demi-finales");
     } else if (sf2HasMe) {
-      await revealOther("sf1", simOther(sf1Home, sf1Away), setSf1);
-      const r = await revealMyMatch(sf2Home, sf2Away, setSf2, "sf2");
+      await revealOther("sf1", simOther(sf1Home, sf1Away, true), setSf1);
+      const r = await revealMyMatch(sf2Home, sf2Away, setSf2, "sf2", true);
       if (r.winner !== myTeamName) setEliminatedIn("Demi-finales");
     } else {
-      await revealOther("sf1", simOther(sf1Home, sf1Away), setSf1);
-      await revealOther("sf2", simOther(sf2Home, sf2Away), setSf2);
+      await revealOther("sf1", simOther(sf1Home, sf1Away, true), setSf1);
+      await revealOther("sf2", simOther(sf2Home, sf2Away, true), setSf2);
     }
     setPhase("final");
     setSimulating(false);
@@ -232,10 +237,10 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
     const finalHasMe = fHome === myTeamName || fAway === myTeamName;
     let winner: string;
     if (finalHasMe) {
-      const r = await revealMyMatch(fHome, fAway, setFinalMatch, "finale");
+      const r = await revealMyMatch(fHome, fAway, setFinalMatch, "finale", true);
       winner = r.winner;
     } else {
-      const r = simOther(fHome, fAway);
+      const r = simOther(fHome, fAway, true);
       await revealOther("finale", r, setFinalMatch);
       winner = r.winner;
     }
@@ -296,18 +301,19 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
 
   /* ── render ──────────────────────────────────────────────── */
   return (
-    <main className={`min-h-screen ${G.pageBg} ${G.text} flex flex-col`}>
+    <main className={`min-h-screen ${isCareerMode ? "bg-[#04060F]" : G.pageBg} ${G.text} flex flex-col`}>
       {showChampionAnim && <GoldenFlashAnimation />}
 
       {overlay && (
         <PlayoffMatchOverlay
           myTeamName={myTeamName}
-          opponent={ovOpponent} isHome={ovIsHome}
+          opponent={ovOpponent} isHome={ovIsHome} neutral={ovNeutral}
           minute={ovMinute} myScore={ovMyScore} oppScore={ovOppScore}
           events={ovEvents} matchDone={ovDone}
           showHalftime={showHalftime}
           onHalftimeChoice={handleHalftimeChoice}
           onSkip={() => resolvePhaseRef.current?.()}
+          isCareerMode={isCareerMode}
         />
       )}
 
@@ -319,7 +325,7 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
           </span>
           <div className={`w-px h-7 ${G.divider}`} />
           <div>
-            <p className={`${G.textFaint} uppercase tracking-[0.35em] text-[8px] lg:text-[9px] font-bold`}>Top 14 · 2025-2026</p>
+            <p className={`${G.textFaint} uppercase tracking-[0.35em] text-[8px] lg:text-[9px] font-bold`}>Top 14</p>
             <p className="text-c-gold font-black text-xs lg:text-sm uppercase tracking-wide">Play-offs</p>
           </div>
         </div>
@@ -404,7 +410,7 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
                 <>
                   <p className="text-c-gold/60 uppercase tracking-[0.5em] text-[8px] font-bold mb-2">Bouclier de Brennus</p>
                   <p className="text-c-gold font-black text-2xl lg:text-3xl uppercase tracking-wide">{myTeamName}</p>
-                  <p className="text-c-gold/40 uppercase tracking-[0.3em] text-[9px] mt-2">Champion Top 14 · 2025-2026</p>
+                  <p className="text-c-gold/40 uppercase tracking-[0.3em] text-[9px] mt-2">Champion Top 14</p>
                 </>
               ) : (
                 <>
@@ -424,12 +430,12 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
           <div className="pb-6">
             {phase !== "done" ? (
               <button onClick={handleSimulate} disabled={simulating}
-                className="w-full bg-c-gold hover:bg-[#c9a42e] disabled:opacity-40 disabled:cursor-not-allowed text-black font-black uppercase tracking-[0.2em] text-sm py-4 transition-colors">
+                className={`w-full bg-c-gold ${isCareerMode ? "hover:bg-[#6F90AA]" : "hover:bg-[#c9a42e]"} disabled:opacity-40 disabled:cursor-not-allowed text-black font-black uppercase tracking-[0.2em] text-sm py-4 transition-colors`}>
                 {simulating ? "Simulation..." : `Simuler ${phaseLabel} →`}
               </button>
             ) : (
               <button onClick={handleGoToRecap}
-                className="w-full bg-c-gold hover:bg-[#c9a42e] text-black font-black uppercase tracking-[0.2em] text-sm py-4 transition-colors">
+                className={`w-full bg-c-gold ${isCareerMode ? "hover:bg-[#6F90AA]" : "hover:bg-[#c9a42e]"} text-black font-black uppercase tracking-[0.2em] text-sm py-4 transition-colors`}>
                 Voir le récap →
               </button>
             )}
@@ -443,15 +449,16 @@ export function PlayoffsScreen({ myTeamName, teamRating, selectedPlayers, qualif
 /* ── Immersive match overlay ──────────────────────────────────── */
 
 interface OverlayProps {
-  myTeamName: string; opponent: string; isHome: boolean;
+  myTeamName: string; opponent: string; isHome: boolean; neutral: boolean;
   minute: number; myScore: number; oppScore: number;
   events: MatchEvent[]; matchDone: boolean;
   showHalftime: boolean;
   onHalftimeChoice: (c: HalfTimeChoice) => void;
   onSkip: () => void;
+  isCareerMode?: boolean;
 }
 
-function PlayoffMatchOverlay({ myTeamName, opponent, isHome, minute, myScore, oppScore, events, matchDone, showHalftime, onHalftimeChoice, onSkip }: OverlayProps) {
+function PlayoffMatchOverlay({ myTeamName, opponent, isHome, neutral, minute, myScore, oppScore, events, matchDone, showHalftime, onHalftimeChoice, onSkip, isCareerMode }: OverlayProps) {
   const leftName  = isHome ? myTeamName : strip(opponent);
   const rightName = isHome ? strip(opponent) : myTeamName;
   const leftScore = isHome ? myScore : oppScore;
@@ -460,14 +467,14 @@ function PlayoffMatchOverlay({ myTeamName, opponent, isHome, minute, myScore, op
   const minuteLabel = minute === 0 ? "…" : minute >= 82 ? `${minute}'` : minute >= 80 ? "80'" : `${minute}'`;
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 40, display: "flex", flexDirection: "column", backgroundColor: "#080600" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 40, display: "flex", flexDirection: "column", backgroundColor: isCareerMode ? "#04060F" : "#080600" }}>
 
       {/* Header bar */}
       <div className={`border-b ${G.border} px-5 py-3 flex items-center justify-between flex-shrink-0`}>
         <div>
           <p className="text-c-gold uppercase tracking-[0.4em] text-[8px] font-bold">Play-offs</p>
           <p className={`${G.textMuted} text-[9px] uppercase tracking-wide`}>
-            {isHome ? "Domicile" : "Extérieur"} · {strip(opponent)}
+            {neutral ? "Terrain neutre" : isHome ? "Domicile" : "Extérieur"} · {strip(opponent)}
           </p>
         </div>
         {!matchDone && !showHalftime && (

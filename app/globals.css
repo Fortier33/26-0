@@ -23,6 +23,39 @@
   --c-border-lo: rgba(255,255,255,0.05);
 }
 
+/* ── Career mode overrides (steel-blue palette) ── */
+[data-mode="career"] {
+  --color-c-bg:      #04060F;
+  --color-c-surface: #060A14;
+  --color-c-fg:      #E8EDF5;
+  --color-c-gold:    #8FAFC8;
+  --color-c-gold-hi: #A8C4D8;
+  --c-muted:     rgba(143,175,200,0.65);
+  --c-faint:     rgba(143,175,200,0.30);
+  --c-ghost:     rgba(143,175,200,0.05);
+  --c-border:    rgba(143,175,200,0.15);
+  --c-border-lo: rgba(143,175,200,0.08);
+}
+
+/* ── Career mode: gold → steel-blue on all Tailwind c-gold classes ─
+   Sets the CSS variable on each element (catches opacity variants too
+   via color-mix cascade), plus a direct property override as fallback
+   in case Tailwind v4 inlines OKLCH values rather than var() refs.   */
+[data-mode="career"] :is(
+  [class*="text-c-gold"],
+  [class*="border-c-gold"],
+  [class*="bg-c-gold"],
+  [class*="from-c-gold"],
+  [class*="to-c-gold"],
+  [class*="divide-c-gold"]
+) {
+  --color-c-gold: #8FAFC8;
+  --color-c-gold-hi: #A8C4D8;
+}
+[data-mode="career"] [class~="text-c-gold"]   { color: #8FAFC8; }
+[data-mode="career"] [class~="border-c-gold"] { border-color: #8FAFC8; }
+[data-mode="career"] [class~="bg-c-gold"]     { background-color: #8FAFC8; }
+
 /* ── Light mode overrides ───────────────────────── */
 [data-theme="light"] {
   --color-c-bg:      #FFFFFF;

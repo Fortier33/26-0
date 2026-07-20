@@ -2,19 +2,77 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { HomeScreen } from "@/components/HomeScreen";
+import { DraftHomeScreen } from "@/components/DraftHomeScreen";
+import { CareerHomeScreen } from "@/components/CareerHomeScreen";
 import { DraftScreen } from "@/components/DraftScreen";
 import { SeasonScreen } from "@/components/SeasonScreen";
 import { PlayoffsScreen } from "@/components/PlayoffsScreen";
 import { RecapScreen } from "@/components/RecapScreen";
 import { MercatoScreen } from "@/components/MercatoScreen";
+import { RevealScreen } from "@/components/RevealScreen";
+import { FriendsSetupScreen } from "@/components/FriendsSetupScreen";
+import { FriendsDraftScreen } from "@/components/FriendsDraftScreen";
+import { FriendsRecapScreen } from "@/components/FriendsRecapScreen";
+import { FriendsBracketScreen } from "@/components/FriendsBracketScreen";
+import { FriendsChampionScreen } from "@/components/FriendsChampionScreen";
 import { ScreenTransition } from "@/components/ScreenTransition";
 import { clubs, OPPONENTS } from "@/lib/data";
 import { simulateLeagueMatch } from "@/lib/simulation";
 import { generateSchedule, extractCalendar } from "@/lib/schedule";
-import { defaultUpgradeGrades, getWinIncome, getStadiumBonus, LEAGUE_PRIZES, getPlayoffPrize } from "@/lib/budget";
-import type { CalendarEntry, ClubUpgrade, Fixture, MatchEvent, Player, PlayoffSummary, RoundMatchResult, Screen, SeasonRecord, UpgradeGrades } from "@/lib/types";
+import { defaultUpgradeGrades, getWinIncome, getStadiumBonus, getTransportBonus, getMentalCoachBonus, LEAGUE_PRIZES, getPlayoffPrize } from "@/lib/budget";
+import { generateBracket } from "@/lib/friends";
+import type { CalendarEntry, ClubUpgrade, Fixture, FriendsBracket, FriendsTeam, MatchEvent, Player, PlayoffSummary, RoundMatchResult, Screen, SeasonRecord, UpgradeGrades } from "@/lib/types";
 
 const TOTAL_MATCHES = 26;
+
+const CAREER_SLOTS = [
+  "Pilier gauche", "Talonneur", "Pilier droit",
+  "Deuxième ligne", "Deuxième ligne",
+  "Troisième ligne", "Troisième ligne", "Numéro 8",
+  "Demi de mêlée", "Ouvreur",
+  "Centre", "Centre", "Ailier", "Ailier", "Arrière",
+];
+
+function generateCareerTeam(): Player[] {
+  const all: Player[] = Object.entries(clubs).flatMap(([key, players]) =>
+    players.map(p => ({ ...p, club: key }))
+  );
+  const shuffled = [...all].sort(() => Math.random() - 0.5);
+
+  const t1 = shuffled.filter(p => p.rating > 90);
+  const t2 = shuffled.filter(p => p.rating > 85 && p.rating <= 90);
+  const t3 = shuffled.filter(p => p.rating <= 85);
+
+  const idx = (arr: Player[]) => arr.reduce<Record<string, Player[]>>((acc, p) => {
+    (acc[p.position] ??= []).push(p); return acc;
+  }, {});
+  const i1 = idx(t1), i2 = idx(t2), i3 = idx(t3);
+
+  // 2 legends (>90), 3 stars (86-90), 10 solid (≤85), shuffled across slots
+  const plan = [...Array(2).fill(1), ...Array(3).fill(2), ...Array(10).fill(3)]
+    .sort(() => Math.random() - 0.5) as (1 | 2 | 3)[];
+
+  const used = new Set<string>();
+  const team: Player[] = [];
+
+  CAREER_SLOTS.forEach((pos, i) => {
+    const tier = plan[i];
+    const order: (1 | 2 | 3)[] = tier === 1 ? [1, 2, 3] : tier === 2 ? [2, 3, 1] : [3, 2, 1];
+    let picked: Player | undefined;
+    for (const t of order) {
+      const pool = t === 1 ? i1 : t === 2 ? i2 : i3;
+      const cands = (pool[pos] ?? []).filter(p => !used.has(p.name));
+      if (cands.length > 0) { picked = cands[Math.floor(Math.random() * cands.length)]; break; }
+    }
+    if (!picked) {
+      const cands = all.filter(p => p.position === pos && !used.has(p.name));
+      picked = cands[Math.floor(Math.random() * cands.length)];
+    }
+    if (picked) { used.add(picked.name); team.push(picked); }
+  });
+
+  return team;
+}
 
 function getClubAndSeason(key: string) {
   const season = key.match(/\d{2}-\d{2}$/)![0];
@@ -67,6 +125,7 @@ export default function Home() {
   const [qualifiedTeams, setQualifiedTeams] = useState<string[]>([]);
   const [myFinalPosition, setMyFinalPosition] = useState(0);
   const [playoffSummary, setPlayoffSummary] = useState<PlayoffSummary | null>(null);
+  const [gameMode, setGameMode] = useState<"draft" | "career" | null>(null);
   const [transitioning, setTransitioning]   = useState(false);
   const [transitionLabel, setTransitionLabel] = useState("");
   const [transitionColor, setTransitionColor] = useState("#D4AF37");
@@ -90,6 +149,11 @@ export default function Home() {
   const [seasonLeaguePrize, setSeasonLeaguePrize] = useState(0);
   const [seasonPlayoffPrize, setSeasonPlayoffPrize] = useState(0);
   const currentRecordRef = useRef<SeasonRecord | null>(null);
+
+  // ── Friends playoffs ──────────────────────────────────────
+  const [friendsTeams, setFriendsTeams] = useState<FriendsTeam[]>([]);
+  const [friendsBracket, setFriendsBracket] = useState<FriendsBracket | null>(null);
+  const [friendsChampion, setFriendsChampion] = useState<FriendsTeam | null>(null);
 
   const teamRating = useMemo(() => {
     if (selectedPlayers.length === 0) return 0;
@@ -143,18 +207,30 @@ export default function Home() {
   }
 
   function handleStartDraft() {
+    setScreen("draft-home");
+  }
+
+  function handleStartCareer() {
+    setScreen("career-home");
+  }
+
+  function handleDraftConfirm() {
+    setGameMode("draft");
     triggerTransition("RECRUTEMENT", "#D4AF37", () => setScreen("draft"));
   }
 
-  function buildNewSeason() {
-    const schedule = generateSchedule([myTeamName, ...OPPONENTS]);
-    const cal = extractCalendar(schedule, myTeamName);
-    return { schedule, cal };
+  function handleCareerConfirm() {
+    const team = generateCareerTeam();
+    setGameMode("career");
+    triggerTransition("MODE CARRIÈRE", "#8FAFC8", () => {
+      setSelectedPlayers(team);
+      setScreen("reveal");
+    });
   }
 
-  function handleStartSeason() {
+  function handleRevealComplete() {
     const { schedule, cal } = buildNewSeason();
-    triggerTransition("SAISON 1", "#D4AF37", () => {
+    triggerTransition("SAISON 1", "#8FAFC8", () => {
       setFixtures(schedule);
       setCalendar(cal);
       setRoundResults([]);
@@ -163,6 +239,24 @@ export default function Home() {
       setRegularSeasonDone(false);
       setScreen("season");
     });
+  }
+
+  function buildNewSeason() {
+    const shuffled = [...OPPONENTS].sort(() => Math.random() - 0.5);
+    const schedule = generateSchedule([...shuffled, myTeamName]);
+    const cal = extractCalendar(schedule, myTeamName);
+    return { schedule, cal };
+  }
+
+  function handleStartSeason() {
+    const { schedule, cal } = buildNewSeason();
+    setFixtures(schedule);
+    setCalendar(cal);
+    setRoundResults([]);
+    setCurrentMatchIndex(0);
+    setSeasonRevealed([]);
+    setRegularSeasonDone(false);
+    setScreen("season");
   }
 
   function handleMatchComplete(resultLine: string, events: MatchEvent[]) {
@@ -244,7 +338,7 @@ export default function Home() {
     if (!top6.includes(myTeamName)) {
       const record = buildSeasonRecord(seasonRevealed, seasonTries, pos, seasonNumber, "non-qualifié");
       currentRecordRef.current = record;
-      triggerTransition("BILAN", "#D4AF37", () => {
+      triggerTransition("BILAN", gameMode === "career" ? "#8FAFC8" : "#D4AF37", () => {
         setQualifiedTeams(top6);
         setMyFinalPosition(pos);
         setBudget((prev) => prev + leaguePrize);
@@ -254,7 +348,7 @@ export default function Home() {
         setScreen("recap");
       });
     } else {
-      triggerTransition("PLAY-OFFS", "#D4AF37", () => {
+      triggerTransition("PLAY-OFFS", gameMode === "career" ? "#8FAFC8" : "#D4AF37", () => {
         setQualifiedTeams(top6);
         setMyFinalPosition(pos);
         setBudget((prev) => prev + leaguePrize);
@@ -288,7 +382,7 @@ export default function Home() {
     const playoffPrize = getPlayoffPrize(summary.outcome, summary.eliminatedIn);
     const record = buildSeasonRecord(seasonRevealed, seasonTries, myFinalPosition, seasonNumber, summary.outcome);
     currentRecordRef.current = record;
-    triggerTransition("BILAN", "#D4AF37", () => {
+    triggerTransition("BILAN", gameMode === "career" ? "#8FAFC8" : "#D4AF37", () => {
       setBudget((prev) => prev + playoffPrize);
       setSeasonPlayoffPrize(playoffPrize);
       setSeasonHistory((prev) => [...prev, record]);
@@ -338,6 +432,7 @@ export default function Home() {
     const newClub = keys[Math.floor(Math.random() * keys.length)];
     triggerTransition("NOUVEAU JEU", "#D4AF37", () => {
       setScreen("home");
+      setGameMode(null);
       setSelectedPlayers([]);
       setSameClubRerolls(3);
       setSameSeasonRerolls(3);
@@ -399,6 +494,8 @@ export default function Home() {
         budget={budget}
         winIncome={getWinIncome(upgrades.marketing)}
         stadiumBonus={getStadiumBonus(upgrades.stadium)}
+        transportBonus={getTransportBonus(upgrades.transport)}
+        isCareerMode={gameMode === "career"}
         onMatchComplete={handleMatchComplete}
         onGoToRanking={handleGoToPlayoffs}
       />
@@ -411,6 +508,8 @@ export default function Home() {
         selectedPlayers={selectedPlayers}
         qualifiedTeams={qualifiedTeams}
         onComplete={handlePlayoffsComplete}
+        isCareerMode={gameMode === "career"}
+        mentalCoachBonus={getMentalCoachBonus(upgrades.mentalCoach)}
       />
     );
   } else if (screen === "recap" && playoffSummary) {
@@ -433,8 +532,17 @@ export default function Home() {
         seasonMatchIncome={seasonMatchIncome}
         seasonLeaguePrize={seasonLeaguePrize}
         seasonPlayoffPrize={seasonPlayoffPrize}
+        isCareerMode={gameMode === "career"}
         onReplay={handleReplay}
         onNextSeason={handleNextSeason}
+      />
+    );
+  } else if (screen === "reveal") {
+    content = (
+      <RevealScreen
+        myTeamName={myTeamName}
+        selectedPlayers={selectedPlayers}
+        onComplete={handleRevealComplete}
       />
     );
   } else if (screen === "mercato") {
@@ -448,18 +556,83 @@ export default function Home() {
         onComplete={handleMercatoComplete}
       />
     );
+  } else if (screen === "draft-home") {
+    content = (
+      <DraftHomeScreen
+        myTeamName={myTeamName}
+        onChangeTeamName={setMyTeamName}
+        onContinue={handleDraftConfirm}
+        onBack={() => setScreen("home")}
+      />
+    );
+  } else if (screen === "career-home") {
+    content = (
+      <CareerHomeScreen
+        myTeamName={myTeamName}
+        onChangeTeamName={setMyTeamName}
+        onContinue={handleCareerConfirm}
+        onBack={() => setScreen("home")}
+      />
+    );
+  } else if (screen === "friends-setup") {
+    content = (
+      <FriendsSetupScreen
+        onStart={(teams) => { setFriendsTeams(teams); setScreen("friends-draft"); }}
+        onBack={() => setScreen("home")}
+      />
+    );
+  } else if (screen === "friends-draft") {
+    content = (
+      <FriendsDraftScreen
+        teams={friendsTeams}
+        onComplete={(teams) => { setFriendsTeams(teams); setScreen("friends-recap"); }}
+      />
+    );
+  } else if (screen === "friends-recap" && friendsTeams.length > 0) {
+    content = (
+      <FriendsRecapScreen
+        teams={friendsTeams}
+        onContinue={() => { setFriendsBracket(generateBracket(friendsTeams)); setScreen("friends-bracket"); }}
+      />
+    );
+  } else if (screen === "friends-bracket" && friendsBracket) {
+    content = (
+      <FriendsBracketScreen
+        bracket={friendsBracket}
+        onComplete={(champion) => { setFriendsChampion(champion); setScreen("friends-champion"); }}
+      />
+    );
+  } else if (screen === "friends-champion" && friendsChampion && friendsBracket) {
+    content = (
+      <FriendsChampionScreen
+        champion={friendsChampion}
+        bracket={friendsBracket}
+        onReplay={() => {
+          setFriendsTeams([]);
+          setFriendsBracket(null);
+          setFriendsChampion(null);
+          setScreen("friends-setup");
+        }}
+        onHome={() => {
+          setFriendsTeams([]);
+          setFriendsBracket(null);
+          setFriendsChampion(null);
+          setScreen("home");
+        }}
+      />
+    );
   } else {
     content = (
       <HomeScreen
-        myTeamName={myTeamName}
-        onChangeTeamName={setMyTeamName}
         onStartDraft={handleStartDraft}
+        onStartCareer={handleStartCareer}
+        onStartFriends={() => setScreen("friends-setup")}
       />
     );
   }
 
   return (
-    <div data-theme={theme}>
+    <div data-theme={theme} data-mode={gameMode === "career" ? "career" : undefined}>
       {transitioning && (
         <ScreenTransition
           label={transitionLabel}
@@ -468,13 +641,13 @@ export default function Home() {
           onDone={() => setTransitioning(false)}
         />
       )}
-      {/* Floating controls */}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 items-end">
+      {/* Theme toggle — top-right, out of the way of bottom action bars */}
+      <div className="fixed top-3 right-3 z-50">
         <button
           onClick={toggleTheme}
-          className="bg-c-surface border border-[var(--c-border)] hover:border-c-gold/50 text-[var(--c-muted)] hover:text-c-fg font-bold uppercase tracking-widest text-[10px] px-3 py-2 transition-all"
+          className="bg-c-surface border border-[var(--c-border)] hover:border-c-gold/50 text-[var(--c-muted)] hover:text-c-fg font-bold uppercase tracking-widest text-[10px] px-2.5 py-1.5 transition-all"
         >
-          {theme === "dark" ? "☀ Light" : "☾ Dark"}
+          {theme === "dark" ? "☀" : "☾"}
         </button>
       </div>
 

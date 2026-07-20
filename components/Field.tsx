@@ -45,11 +45,10 @@ export function Field({ selectedPlayers, compact = false }: FieldProps) {
     <div
       className={`relative ${height} overflow-hidden`}
       style={{
-        background:
-          "radial-gradient(ellipse 110% 85% at 50% 48%, #1E6B2E 0%, #145220 38%, #0C3A16 65%, #071A0C 100%)",
+        background: "radial-gradient(ellipse 110% 85% at 50% 48%, #0C1A2E 0%, #070E1A 50%, #020508 100%)",
       }}
     >
-      {/* Mowed grass stripes */}
+      {/* Subtle stripe texture */}
       {Array.from({ length: 14 }).map((_, i) => (
         <div
           key={i}
@@ -57,7 +56,7 @@ export function Field({ selectedPlayers, compact = false }: FieldProps) {
           style={{
             top: `${(i / 14) * 100}%`,
             height: `${100 / 14}%`,
-            background: i % 2 === 0 ? "rgba(0,0,0,0.055)" : "transparent",
+            background: i % 2 === 0 ? "rgba(143,175,200,0.025)" : "transparent",
           }}
         />
       ))}
@@ -66,56 +65,35 @@ export function Field({ selectedPlayers, compact = false }: FieldProps) {
       {/* Outer boundary */}
       <div
         className="absolute"
-        style={{ inset: "3% 5%", border: "1px solid rgba(255,255,255,0.22)" }}
+        style={{ inset: "3% 5%", border: "1px solid rgba(143,175,200,0.25)" }}
       />
       {/* In-goal / try lines */}
       <div
         className="absolute"
-        style={{
-          left: "5%", right: "5%", top: "11%",
-          height: 1, background: "rgba(255,255,255,0.22)",
-        }}
+        style={{ left: "5%", right: "5%", top: "11%", height: 1, background: "rgba(143,175,200,0.25)" }}
       />
       <div
         className="absolute"
-        style={{
-          left: "5%", right: "5%", bottom: "11%",
-          height: 1, background: "rgba(255,255,255,0.22)",
-        }}
+        style={{ left: "5%", right: "5%", bottom: "11%", height: 1, background: "rgba(143,175,200,0.25)" }}
       />
       {/* 22m lines */}
       <div
         className="absolute"
-        style={{
-          left: "5%", right: "5%", top: "28%",
-          height: 1, background: "rgba(255,255,255,0.13)",
-        }}
+        style={{ left: "5%", right: "5%", top: "28%", height: 1, background: "rgba(143,175,200,0.13)" }}
       />
       <div
         className="absolute"
-        style={{
-          left: "5%", right: "5%", bottom: "28%",
-          height: 1, background: "rgba(255,255,255,0.13)",
-        }}
+        style={{ left: "5%", right: "5%", bottom: "28%", height: 1, background: "rgba(143,175,200,0.13)" }}
       />
-      {/* Halfway — brighter */}
+      {/* Halfway */}
       <div
         className="absolute"
-        style={{
-          left: "5%", right: "5%", top: "50%",
-          height: 1, background: "rgba(255,255,255,0.30)",
-          marginTop: -0.5,
-        }}
+        style={{ left: "5%", right: "5%", top: "50%", height: 1, background: "rgba(143,175,200,0.35)", marginTop: -0.5 }}
       />
       {/* Kickoff spot */}
       <div
         className="absolute rounded-full"
-        style={{
-          left: "50%", top: "50%",
-          width: 6, height: 6,
-          marginLeft: -3, marginTop: -3,
-          border: "1px solid rgba(255,255,255,0.22)",
-        }}
+        style={{ left: "50%", top: "50%", width: 6, height: 6, marginLeft: -3, marginTop: -3, border: "1px solid rgba(143,175,200,0.25)" }}
       />
 
       {/* Player badges */}

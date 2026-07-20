@@ -90,7 +90,7 @@ export function MercatoScreen({
   const [openPositions, setOpenPositions] = useState<string[]>([]);
   const [localBudget, setLocalBudget]   = useState(budget);
   const [localUpgrades, setLocalUpgrades] = useState<UpgradeGrades>({ ...upgrades });
-  const [hasInvested, setHasInvested]   = useState(false);
+  const [hasInvested, setHasInvested]   = useState(0);
   const [sales, setSales]               = useState<{ player: Player; value: number }[]>([]);
   const [purchases, setPurchases]       = useState<{ player: Player; price: number }[]>([]);
 
@@ -102,7 +102,7 @@ export function MercatoScreen({
     setOpenPositions([]);
     setLocalBudget(budgetAtStart.current);
     setLocalUpgrades({ ...upgradesAtStart.current });
-    setHasInvested(false);
+    setHasInvested(0);
     setSales([]);
     setPurchases([]);
   }
@@ -132,30 +132,26 @@ export function MercatoScreen({
 
   function handleUpgrade(upgrade: ClubUpgrade) {
     const cost = nextUpgradeCost(upgrade, localUpgrades[upgrade]);
-    if (cost === undefined || localBudget < cost || hasInvested) return;
+    if (cost === undefined || localBudget < cost || hasInvested >= 2) return;
     setLocalUpgrades(prev => ({ ...prev, [upgrade]: (prev[upgrade] + 1) as 0 | 1 | 2 | 3 }));
     setLocalBudget(prev => prev - cost);
-    setHasInvested(true);
+    setHasInvested(prev => prev + 1);
   }
 
-  function findUpgradePurchased(): { key: ClubUpgrade; grade: number } | null {
-    for (const key of ["stadium", "recruiter", "trainer", "marketing"] as ClubUpgrade[]) {
-      if (localUpgrades[key] !== upgradesAtStart.current[key]) {
-        return { key, grade: localUpgrades[key] };
-      }
-    }
-    return null;
+  function findUpgradesPurchased(): { key: ClubUpgrade; grade: number }[] {
+    return (["stadium", "recruiter", "trainer", "marketing"] as ClubUpgrade[])
+      .filter(key => localUpgrades[key] !== upgradesAtStart.current[key])
+      .map(key => ({ key, grade: localUpgrades[key] }));
   }
 
   if (phase === "recap") {
-    const upgradePurchased = findUpgradePurchased();
+    const upgradesPurchased = findUpgradesPurchased();
     return (
       <main style={{ minHeight: "100svh", background: S.bg, color: S.text }} className="flex flex-col overflow-hidden">
         <RecapInterSaison
           sales={sales}
           purchases={purchases}
-          upgradeKey={upgradePurchased?.key ?? null}
-          newUpgradeGrade={upgradePurchased?.grade ?? 0}
+          upgradesPurchased={upgradesPurchased}
           budgetBefore={budgetAtStart.current}
           budgetAfter={localBudget}
           seasonNumber={seasonNumber}
@@ -197,6 +193,7 @@ export function MercatoScreen({
         catalog={catalog}
         ratingCap={ratingCap}
         seasonNumber={seasonNumber}
+        purchasedNames={new Set(purchases.map(p => p.player.name))}
         onSell={handleSell}
         onBuy={handleBuy}
         onUpgrade={handleUpgrade}
@@ -214,10 +211,11 @@ interface InterSeasonPageProps {
   openPositions: string[];
   localBudget: number;
   localUpgrades: UpgradeGrades;
-  hasInvested: boolean;
+  hasInvested: number;
   catalog: CatalogPlayer[];
   ratingCap: number;
   seasonNumber: number;
+  purchasedNames: Set<string>;
   onSell: (idx: number) => void;
   onBuy: (cp: CatalogPlayer) => void;
   onUpgrade: (upgrade: ClubUpgrade) => void;
@@ -227,16 +225,16 @@ interface InterSeasonPageProps {
 
 function InterSeasonPage({
   squad, openPositions, localBudget, localUpgrades, hasInvested,
-  catalog, ratingCap, seasonNumber,
+  catalog, ratingCap, seasonNumber, purchasedNames,
   onSell, onBuy, onUpgrade, onReset, onNext,
 }: InterSeasonPageProps) {
-  const [activeTab, setActiveTab] = useState<"ventes" | "achats" | "club">("ventes");
+  const [activeTab, setActiveTab] = useState<"ventes" | "achats" | "club">("club");
   const [resetKey, setResetKey]   = useState(0);
 
   function handleReset() {
     onReset();
     setResetKey(k => k + 1);
-    setActiveTab("ventes");
+    setActiveTab("club");
   }
 
   const canProceed    = squad.length === 15 && openPositions.length === 0;
@@ -291,51 +289,72 @@ function InterSeasonPage({
       </header>
 
       {/* ── Tabs ──────────────────────────────────────────────── */}
-      <div className="flex flex-shrink-0" style={{ borderBottom: `1px solid ${S.border}` }}>
-        {(["ventes", "achats", "club"] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            style={{
-              flex: 1, padding: "11px 0",
-              fontSize: 10, fontWeight: 900,
-              textTransform: "uppercase", letterSpacing: "0.2em",
-              color: activeTab === tab ? S.accent : S.muted,
-              borderBottom: activeTab === tab ? `2px solid ${S.accent}` : "2px solid transparent",
-              background: "transparent",
-              transition: "color 0.15s",
-            }}
-          >
-            {tab === "ventes" ? "Ventes" : tab === "achats" ? "Achats" : "Mon Club"}
-          </button>
-        ))}
-      </div>
+      {(() => {
+        const transfersLocked = seasonNumber < 3;
+        return (
+          <>
+            <div className="flex flex-shrink-0" style={{ borderBottom: `1px solid ${S.border}` }}>
+              {(["club", "ventes", "achats"] as const).map(tab => {
+                const locked = transfersLocked && (tab === "ventes" || tab === "achats");
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => !locked && setActiveTab(tab)}
+                    style={{
+                      flex: 1, padding: "11px 0",
+                      fontSize: 10, fontWeight: 900,
+                      textTransform: "uppercase", letterSpacing: "0.2em",
+                      color: locked ? S.faint : activeTab === tab ? S.accent : S.muted,
+                      borderBottom: activeTab === tab ? `2px solid ${S.accent}` : "2px solid transparent",
+                      background: "transparent",
+                      cursor: locked ? "default" : "pointer",
+                      transition: "color 0.15s",
+                    }}
+                  >
+                    {tab === "ventes" ? (locked ? "Ventes (dispo S3)" : "Ventes") : tab === "achats" ? (locked ? "Achats (dispo S3)" : "Achats") : "Mon Club"}
+                  </button>
+                );
+              })}
+            </div>
 
-      {/* ── Tab content ───────────────────────────────────────── */}
-      <div key={resetKey} className="flex-1 overflow-y-auto">
-        {activeTab === "ventes" && (
-          <VentesTab squad={squad} onSell={onSell} />
-        )}
-        {activeTab === "achats" && (
-          <AchatsTab
-            squad={squad}
-            openPositions={openPositions}
-            localBudget={localBudget}
-            localUpgrades={localUpgrades}
-            catalog={catalog}
-            ratingCap={ratingCap}
-            onBuy={onBuy}
-          />
-        )}
-        {activeTab === "club" && (
-          <ClubTab
-            localUpgrades={localUpgrades}
-            localBudget={localBudget}
-            hasInvested={hasInvested}
-            onUpgrade={onUpgrade}
-          />
-        )}
-      </div>
+            {/* ── Tab content ─────────────────────────────────────── */}
+            <div key={resetKey} className="flex-1 overflow-y-auto">
+              {activeTab === "ventes" && !transfersLocked && (
+                <VentesTab squad={squad} purchasedNames={purchasedNames} onSell={onSell} />
+              )}
+              {activeTab === "achats" && !transfersLocked && (
+                <AchatsTab
+                  squad={squad}
+                  openPositions={openPositions}
+                  localBudget={localBudget}
+                  localUpgrades={localUpgrades}
+                  catalog={catalog}
+                  onBuy={onBuy}
+                />
+              )}
+              {(activeTab === "club" || transfersLocked) && activeTab !== "ventes" && activeTab !== "achats" && (
+                <ClubTab
+                  localUpgrades={localUpgrades}
+                  localBudget={localBudget}
+                  hasInvested={hasInvested}
+                  seasonNumber={seasonNumber}
+                  onUpgrade={onUpgrade}
+                />
+              )}
+              {transfersLocked && (activeTab === "ventes" || activeTab === "achats") && (
+                <div style={{ padding: "40px 20px", textAlign: "center" }}>
+                  <p style={{ color: S.muted, fontSize: 12, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.2em", marginBottom: 10 }}>
+                    Disponible à partir de la saison 3
+                  </p>
+                  <p style={{ color: S.faint, fontSize: 11, lineHeight: 1.6, maxWidth: 280, margin: "0 auto" }}>
+                    Les transferts s'ouvrent après ta deuxième saison. Concentre-toi d'abord sur le développement de ton club.
+                  </p>
+                </div>
+              )}
+            </div>
+          </>
+        );
+      })()}
 
       {/* ── Bottom bar ────────────────────────────────────────── */}
       <div className="flex-shrink-0 px-5 pb-5 pt-3" style={{ borderTop: `1px solid ${S.border}` }}>
@@ -390,7 +409,7 @@ function InterSeasonPage({
 
 /* ── VentesTab ────────────────────────────────────────────────────── */
 
-function VentesTab({ squad, onSell }: { squad: Player[]; onSell: (idx: number) => void }) {
+function VentesTab({ squad, purchasedNames, onSell }: { squad: Player[]; purchasedNames: Set<string>; onSell: (idx: number) => void }) {
   const [confirmIdx, setConfirmIdx] = useState<number | null>(null);
 
   const sorted = [...squad]
@@ -406,9 +425,10 @@ function VentesTab({ squad, onSell }: { squad: Player[]; onSell: (idx: number) =
       ]} />
 
       {sorted.map(({ player, originalIndex }) => {
-        const value       = getMarketValue(player.rating);
-        const isFree      = value === 0;
+        const value        = getMarketValue(player.rating);
+        const isFree       = value === 0;
         const isConfirming = confirmIdx === originalIndex;
+        const isNewRecruit = purchasedNames.has(player.name);
 
         return (
           <div
@@ -438,16 +458,22 @@ function VentesTab({ squad, onSell }: { squad: Player[]; onSell: (idx: number) =
                   {isFree ? "Libre" : `+${formatBudget(value)}`}
                 </span>
                 <PlayerBadge rating={player.rating} />
-                <button
-                  onClick={() => setConfirmIdx(originalIndex)}
-                  style={{
-                    fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.15em",
-                    color: "#F87171", border: "1px solid rgba(239,68,68,0.35)",
-                    padding: "5px 9px", background: "transparent", flexShrink: 0,
-                  }}
-                >
-                  Vendre
-                </button>
+                {isNewRecruit ? (
+                  <span style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: S.faint, flexShrink: 0 }}>
+                    Recrue
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => setConfirmIdx(originalIndex)}
+                    style={{
+                      fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.15em",
+                      color: "#F87171", border: "1px solid rgba(239,68,68,0.35)",
+                      padding: "5px 9px", background: "transparent", flexShrink: 0,
+                    }}
+                  >
+                    Vendre
+                  </button>
+                )}
               </div>
             ) : (
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 20px" }}>
@@ -496,34 +522,30 @@ interface AchatsTabProps {
   localBudget: number;
   localUpgrades: UpgradeGrades;
   catalog: CatalogPlayer[];
-  ratingCap: number;
   onBuy: (cp: CatalogPlayer) => void;
 }
 
-function AchatsTab({ squad, openPositions, localBudget, localUpgrades, catalog, ratingCap, onBuy }: AchatsTabProps) {
+function AchatsTab({ squad, openPositions, localBudget, localUpgrades, catalog, onBuy }: AchatsTabProps) {
   const [confirmCp, setConfirmCp] = useState<CatalogPlayer | null>(null);
 
   const discount    = getRecruiterDiscount(localUpgrades.recruiter);
   const discountPct = Math.round(discount * 100);
 
-  const eligibleByPosition = useMemo(() => {
-    const uniquePos = [...new Set(openPositions)];
-    const result: Record<string, CatalogPlayer[]> = {};
-    for (const pos of uniquePos) {
-      result[pos] = catalog
-        .filter(cp => {
-          const price = Math.round(getMarketValue(cp.rating) * (1 - discount));
-          return (
-            cp.position === pos &&
-            cp.rating <= ratingCap &&
-            !squad.some(sp => sp.name === cp.name) &&
-            price <= localBudget
-          );
-        })
-        .sort((a, b) => b.rating - a.rating);
-    }
-    return result;
-  }, [catalog, openPositions, squad, localBudget, discount, ratingCap]);
+  // All players from the full catalog that are affordable and not already in the squad.
+  // Positions without an open slot are excluded — a vacancy must exist first (via Ventes).
+  const allCandidates = useMemo(() => {
+    const openPosSet = new Set(openPositions);
+    return catalog
+      .filter(cp => {
+        const price = Math.round(getMarketValue(cp.rating) * (1 - discount));
+        return (
+          openPosSet.has(cp.position) &&
+          !squad.some(sp => sp.name === cp.name) &&
+          price <= localBudget
+        );
+      })
+      .sort((a, b) => b.rating - a.rating);
+  }, [catalog, openPositions, squad, localBudget, discount]);
 
   const uniqueOpenPos = [...new Set(openPositions)];
 
@@ -535,43 +557,33 @@ function AchatsTab({ squad, openPositions, localBudget, localUpgrades, catalog, 
     })
     .join(" · ");
 
-  const allCandidates = POSITION_ORDER
-    .filter(pos => uniqueOpenPos.includes(pos))
-    .flatMap(pos => eligibleByPosition[pos] ?? []);
-
-  if (openPositions.length === 0) {
-    return (
-      <div>
-        <InstructionBox lines={[
-          "Vends d'abord des joueurs pour libérer des postes.",
-          "Le catalogue affiche uniquement les joueurs dont le poste est ouvert et que tu peux acheter avec ton budget.",
-          "Les joueurs notés 80 ou moins sont disponibles gratuitement.",
-        ]} />
-        <div style={{ padding: "40px 20px", textAlign: "center" }}>
-          <p style={{ color: S.muted, fontSize: 12 }}>Aucun poste à pourvoir.</p>
-          <p style={{ color: S.faint, fontSize: 11, marginTop: 8 }}>
-            Rends-toi dans l&apos;onglet Ventes pour libérer un joueur.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const instructionLines: string[] = openPositions.length === 0
+    ? [
+        "Aucun poste à pourvoir pour l'instant.",
+        "Rends-toi dans l'onglet Ventes pour libérer un joueur — les candidats apparaîtront ici automatiquement.",
+      ]
+    : allCandidates.length === 0
+      ? [
+          `À recruter : ${openPosSummary}.`,
+          "Aucun joueur disponible avec ton budget actuel. Vends d'autres joueurs pour augmenter ton budget.",
+        ]
+      : [
+          `À recruter : ${openPosSummary}.`,
+          discountPct > 0
+            ? `Réduction recruteur −${discountPct} % appliquée. ${allCandidates.length} joueur${allCandidates.length > 1 ? "s" : ""} disponible${allCandidates.length > 1 ? "s" : ""}.`
+            : `${allCandidates.length} joueur${allCandidates.length > 1 ? "s" : ""} disponible${allCandidates.length > 1 ? "s" : ""}. Améliore ton recruteur pour obtenir des réductions.`,
+        ];
 
   return (
     <div>
-      <InstructionBox lines={[
-        `À recruter : ${openPosSummary}.`,
-        allCandidates.length === 0
-          ? "Aucun joueur disponible avec ton budget actuel. Vends d'autres joueurs pour augmenter ton budget."
-          : discountPct > 0
-            ? `Réduction recruteur −${discountPct} % appliquée. ${allCandidates.length} joueur${allCandidates.length > 1 ? "s" : ""} disponible${allCandidates.length > 1 ? "s" : ""}.`
-            : `${allCandidates.length} joueur${allCandidates.length > 1 ? "s" : ""} disponible${allCandidates.length > 1 ? "s" : ""}. Améliore ton recruteur pour obtenir des réductions.`,
-      ]} />
+      <InstructionBox lines={instructionLines} />
 
       {allCandidates.length === 0 ? (
         <div style={{ padding: "24px 20px", textAlign: "center" }}>
           <p style={{ color: S.faint, fontSize: 11 }}>
-            Aucun joueur accessible avec le budget actuel.
+            {openPositions.length === 0
+              ? "Libère un poste dans Ventes pour voir les candidats."
+              : "Aucun joueur accessible avec le budget actuel."}
           </p>
         </div>
       ) : (
@@ -659,22 +671,25 @@ function AchatsTab({ squad, openPositions, localBudget, localUpgrades, catalog, 
 interface ClubTabProps {
   localUpgrades: UpgradeGrades;
   localBudget: number;
-  hasInvested: boolean;
+  hasInvested: number;
+  seasonNumber: number;
   onUpgrade: (upgrade: ClubUpgrade) => void;
 }
 
-function ClubTab({ localUpgrades, localBudget, hasInvested, onUpgrade }: ClubTabProps) {
+function ClubTab({ localUpgrades, localBudget, hasInvested, seasonNumber, onUpgrade }: ClubTabProps) {
   const [confirmUpgrade, setConfirmUpgrade] = useState<ClubUpgrade | null>(null);
 
-  const upgradeList: ClubUpgrade[] = ["stadium", "recruiter", "trainer", "marketing"];
+  const upgradeList: ClubUpgrade[] = ["stadium", "recruiter", "trainer", "marketing", "transport", "mentalCoach"];
 
   return (
     <div>
       <InstructionBox lines={[
         "Investis dans le développement de ton club pour améliorer tes performances saison après saison.",
-        hasInvested
-          ? "Tu as déjà réalisé ton investissement cette inter-saison. Rendez-vous la saison prochaine."
-          : "Un seul investissement par inter-saison. Choisis bien — les effets sont permanents.",
+        hasInvested >= 2
+          ? "Tu as réalisé tes 2 investissements cette inter-saison. Rendez-vous la saison prochaine."
+          : hasInvested === 1
+          ? `1 investissement réalisé — il t'en reste encore un. Choisis bien.`
+          : "Jusqu'à 2 investissements par inter-saison. Les effets sont permanents.",
       ]} />
 
       <div style={{ padding: "12px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -683,7 +698,8 @@ function ClubTab({ localUpgrades, localBudget, hasInvested, onUpgrade }: ClubTab
           const cost       = nextUpgradeCost(upgrade, grade);
           const isMaxed    = grade >= 3;
           const canAfford  = cost !== undefined && localBudget >= cost;
-          const blocked    = hasInvested || !canAfford || isMaxed;
+          const lockedUntilS3 = upgrade === "recruiter" && seasonNumber < 3;
+          const blocked    = lockedUntilS3 || hasInvested >= 2 || !canAfford || isMaxed;
           const isConfirming = confirmUpgrade === upgrade;
           const description = !isMaxed
             ? UPGRADE_GRADE_DESCRIPTIONS[upgrade][grade as 0 | 1 | 2]
@@ -702,8 +718,9 @@ function ClubTab({ localUpgrades, localBudget, hasInvested, onUpgrade }: ClubTab
               {/* Name + grade bars */}
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
                 <div>
-                  <p style={{ color: isMaxed ? S.faint : S.text, fontSize: 11, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                  <p style={{ color: isMaxed || lockedUntilS3 ? S.faint : S.text, fontSize: 11, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.1em" }}>
                     {UPGRADE_LABELS[upgrade]}
+                    {lockedUntilS3 && <span style={{ fontSize: 9, fontWeight: 700, marginLeft: 6, letterSpacing: "0.15em" }}>(dispo S3)</span>}
                   </p>
                   <div style={{ display: "flex", gap: 3, marginTop: 6 }}>
                     {[0, 1, 2].map(g => (
@@ -928,8 +945,7 @@ function SectionTitle({ label }: { label: string }) {
 interface RecapInterSaisonProps {
   sales: { player: Player; value: number }[];
   purchases: { player: Player; price: number }[];
-  upgradeKey: ClubUpgrade | null;
-  newUpgradeGrade: number;
+  upgradesPurchased: { key: ClubUpgrade; grade: number }[];
   budgetBefore: number;
   budgetAfter: number;
   seasonNumber: number;
@@ -938,11 +954,11 @@ interface RecapInterSaisonProps {
 }
 
 function RecapInterSaison({
-  sales, purchases, upgradeKey, newUpgradeGrade,
+  sales, purchases, upgradesPurchased,
   budgetBefore, budgetAfter, seasonNumber,
   onValidate, onBack,
 }: RecapInterSaisonProps) {
-  const hasChanges = sales.length > 0 || purchases.length > 0 || upgradeKey !== null;
+  const hasChanges = sales.length > 0 || purchases.length > 0 || upgradesPurchased.length > 0;
 
   return (
     <div className="flex flex-col" style={{ height: "100svh" }}>
@@ -1025,24 +1041,26 @@ function RecapInterSaison({
               </div>
             )}
 
-            {/* Investissement club */}
-            {upgradeKey !== null && (
+            {/* Investissements club */}
+            {upgradesPurchased.length > 0 && (
               <div>
-                <SectionTitle label="Investissement club" />
-                <div style={{ padding: "12px 20px", borderBottom: `1px solid ${S.border}` }}>
-                  <p style={{ fontWeight: 900, fontSize: 11, color: S.text, textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                    {UPGRADE_LABELS[upgradeKey]}
-                  </p>
-                  <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 6 }}>
-                    {[0, 1, 2].map(g => (
-                      <span key={g} style={{ display: "inline-block", width: 20, height: 3, background: g < newUpgradeGrade ? S.accent : "rgba(143,175,200,0.15)" }} />
-                    ))}
-                    <span style={{ color: S.faint, fontSize: 9, marginLeft: 8 }}>Grade {newUpgradeGrade}</span>
+                <SectionTitle label={`Investissement${upgradesPurchased.length > 1 ? "s" : ""} club · ${upgradesPurchased.length}`} />
+                {upgradesPurchased.map(({ key, grade }) => (
+                  <div key={key} style={{ padding: "12px 20px", borderBottom: `1px solid ${S.border}` }}>
+                    <p style={{ fontWeight: 900, fontSize: 11, color: S.text, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                      {UPGRADE_LABELS[key]}
+                    </p>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 6 }}>
+                      {[0, 1, 2].map(g => (
+                        <span key={g} style={{ display: "inline-block", width: 20, height: 3, background: g < grade ? S.accent : "rgba(143,175,200,0.15)" }} />
+                      ))}
+                      <span style={{ color: S.faint, fontSize: 9, marginLeft: 8 }}>Grade {grade}</span>
+                    </div>
+                    <p style={{ fontSize: 10, color: S.muted, marginTop: 7, lineHeight: 1.5 }}>
+                      {UPGRADE_GRADE_DESCRIPTIONS[key][(grade - 1) as 0 | 1 | 2]}
+                    </p>
                   </div>
-                  <p style={{ fontSize: 10, color: S.muted, marginTop: 7, lineHeight: 1.5 }}>
-                    {UPGRADE_GRADE_DESCRIPTIONS[upgradeKey][(newUpgradeGrade - 1) as 0 | 1 | 2]}
-                  </p>
-                </div>
+                ))}
               </div>
             )}
           </>

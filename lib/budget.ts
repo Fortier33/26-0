@@ -68,10 +68,12 @@ export function getMarketValue(rating: number): number {
 // ── Upgrade costs (index = target grade − 1) ─────────────────────────────────
 
 export const UPGRADE_COSTS: Record<ClubUpgrade, [number, number, number]> = {
-  stadium:   [3_000_000,  6_000_000, 10_000_000],
-  recruiter: [2_000_000,  4_000_000,  7_000_000],
-  trainer:   [2_000_000,  4_000_000,  6_000_000],
-  marketing: [2_000_000,  4_000_000,  7_000_000],
+  stadium:     [3_000_000,  6_000_000, 10_000_000],
+  recruiter:   [2_000_000,  4_000_000,  7_000_000],
+  trainer:     [2_000_000,  4_000_000,  6_000_000],
+  marketing:   [2_000_000,  4_000_000,  7_000_000],
+  transport:   [1_500_000,  3_000_000,  5_500_000],
+  mentalCoach: [1_500_000,  3_000_000,  5_500_000],
 };
 
 // Cost to reach the next grade (undefined if already at grade 3)
@@ -97,6 +99,16 @@ export function getTrainerBoost(grade: 0 | 1 | 2 | 3): number {
   return ([2, 3, 4, 5] as const)[grade];
 }
 
+/** Percentage multiplier applied to team rating for away matches */
+export function getTransportBonus(grade: 0 | 1 | 2 | 3): number {
+  return ([0, 0.08, 0.15, 0.22] as const)[grade];
+}
+
+/** Percentage multiplier applied to team rating during playoff matches */
+export function getMentalCoachBonus(grade: 0 | 1 | 2 | 3): number {
+  return ([0, 0.08, 0.15, 0.22] as const)[grade];
+}
+
 /** Actual win income in € with marketing upgrade applied */
 export function getWinIncome(grade: 0 | 1 | 2 | 3): number {
   const multiplier = ([1, 1.30, 1.70, 2.00] as const)[grade];
@@ -106,10 +118,12 @@ export function getWinIncome(grade: 0 | 1 | 2 | 3): number {
 // ── Upgrade labels (for UI) ───────────────────────────────────────────────────
 
 export const UPGRADE_LABELS: Record<ClubUpgrade, string> = {
-  stadium:   "Nouveau stade",
-  recruiter: "Directeur du recrutement",
-  trainer:   "Préparateur physique",
-  marketing: "Directeur marketing",
+  stadium:     "Nouveau stade",
+  recruiter:   "Directeur du recrutement",
+  trainer:     "Préparateur physique",
+  marketing:   "Directeur marketing",
+  transport:   "Flotte de transport",
+  mentalCoach: "Coach mental",
 };
 
 export const UPGRADE_GRADE_DESCRIPTIONS: Record<ClubUpgrade, [string, string, string]> = {
@@ -133,13 +147,23 @@ export const UPGRADE_GRADE_DESCRIPTIONS: Record<ClubUpgrade, [string, string, st
     "Victoire : 680 000 € (+70 %)",
     "Victoire : 800 000 € (×2)",
   ],
+  transport: [
+    "Force d'équipe à l'extérieur +8 %",
+    "Force d'équipe à l'extérieur +15 %",
+    "Force d'équipe à l'extérieur +22 %",
+  ],
+  mentalCoach: [
+    "Force d'équipe en play-offs +8 %",
+    "Force d'équipe en play-offs +15 %",
+    "Force d'équipe en play-offs +22 %",
+  ],
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Default state: all upgrades at grade 0. */
 export function defaultUpgradeGrades(): UpgradeGrades {
-  return { stadium: 0, recruiter: 0, trainer: 0, marketing: 0 };
+  return { stadium: 0, recruiter: 0, trainer: 0, marketing: 0, transport: 0, mentalCoach: 0 };
 }
 
 /** Format a budget amount for display: 1 500 000 → "1,5M€", 400 000 → "400k€" */

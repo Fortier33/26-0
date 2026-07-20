@@ -31,20 +31,20 @@ function getTeamStrength(clubName: string): number {
 }
 
 function buildMatchCounts(myRating: number, opponentRating: number): [number, number] {
-  // Total scoring opportunities per game: 9 to 15
-  const total = Math.max(6, Math.round(12 + (Math.random() - 0.5) * 6));
+  // Total scoring actions: 7-12, avg ~9.5 → ~22 pts/team (realistic Top 14 range)
+  const total = Math.max(5, Math.round(9 + (Math.random() - 0.5) * 5));
   // Squared ratings amplify skill gaps (otherwise 88 vs 82 looks the same as 95 vs 75)
   const myShare = (myRating * myRating) / (myRating * myRating + opponentRating * opponentRating);
-  const myCount = Math.max(1, Math.round(total * myShare + (Math.random() - 0.5) * 2.5));
-  const oppCount = Math.max(1, total - myCount + Math.round((Math.random() - 0.5) * 2.5));
+  const myCount = Math.max(1, Math.round(total * myShare + (Math.random() - 0.5) * 2));
+  const oppCount = Math.max(1, total - myCount + Math.round((Math.random() - 0.5) * 2));
   return [myCount, oppCount];
 }
 
 function randomActions(count: number): ScoringAction[] {
   return Array.from({ length: count }, () => {
     const r = Math.random();
-    if (r < 0.45) return { type: "try_conv" as const, points: 7 };
-    if (r < 0.6) return { type: "try" as const, points: 5 };
+    if (r < 0.38) return { type: "try_conv" as const, points: 7 };
+    if (r < 0.48) return { type: "try" as const, points: 5 };
     return { type: "penalty" as const, points: 3 };
   });
 }
@@ -101,8 +101,9 @@ function buildEvents(
 export function simulatePlayoffMatch(
   homeTeam: string,
   awayTeam: string,
+  neutral = false,
 ): { homeScore: number; awayScore: number; winner: string } {
-  const homeR = getTeamStrength(homeTeam) + HOME_BONUS;
+  const homeR = getTeamStrength(homeTeam) + (neutral ? 0 : HOME_BONUS);
   const awayR = getTeamStrength(awayTeam);
 
   const [homeCount, awayCount] = buildMatchCounts(homeR, awayR);
@@ -190,9 +191,10 @@ export function simulateMatch(
   selectedPlayers: Player[],
   matchNumber: number,
   stadiumBonus = 0,
+  transportBonus = 0,
 ): MatchResult {
   const opponentRating = getTeamStrength(entry.opponent);
-  const myEffective = myTeamRating * (entry.isHome ? 1 + stadiumBonus : 1) + (entry.isHome ? HOME_BONUS : 0);
+  const myEffective = myTeamRating * (entry.isHome ? 1 + stadiumBonus : 1 + transportBonus) + (entry.isHome ? HOME_BONUS : 0);
   const oppEffective = opponentRating + (entry.isHome ? 0 : HOME_BONUS);
 
   const [myCount, oppCount] = buildMatchCounts(myEffective, oppEffective);
@@ -214,6 +216,57 @@ export function simulateMatch(
     myScore < opponentScore ? "Défaite" : "Nul";
 
   return { matchNumber, opponent: entry.opponent, myScore, opponentScore, events, result };
+}
+
+/** Interactive playoff match using explicit ratings (friends mode — no club name lookup). */
+export function beginFriendsPlayoffMatch(
+  ratingA: number,
+  ratingB: number,
+  players: Player[],
+): PlayoffMatchHandle {
+  const [myTotal, oppTotal] = buildMatchCounts(ratingA, ratingB);
+  const scorers = buildWeightedScorers(players);
+
+  const myH1  = Math.max(0, Math.round(myTotal  * 0.43 + (Math.random() - 0.5)));
+  const oppH1 = Math.max(0, Math.round(oppTotal * 0.43 + (Math.random() - 0.5)));
+  const myH2Base  = Math.max(0, myTotal  - myH1);
+  const oppH2Base = Math.max(0, oppTotal - oppH1);
+
+  const h1MyActions  = randomActions(myH1);
+  const h1OppActions = randomActions(oppH1);
+
+  const firstHalf: HalfResult = {
+    myScore:  actionsToScore(h1MyActions),
+    oppScore: actionsToScore(h1OppActions),
+    events:   buildHalfEvents(h1MyActions, h1OppActions, scorers, 1, 40),
+  };
+
+  function simulateSecondHalf(choice: HalfTimeChoice): HalfResult {
+    let myH2  = myH2Base;
+    let oppH2 = oppH2Base;
+    if (choice === "tenir")        { myH2 = Math.max(0, Math.round(myH2 * 0.85)); oppH2 = Math.max(0, Math.round(oppH2 * 0.72)); }
+    else if (choice === "attaquer"){ myH2 = Math.round(myH2 * 1.30); oppH2 = Math.round(oppH2 * 1.10); }
+    else if (choice === "tout_ou_rien") { myH2 = Math.max(0, Math.round(myH2 * (Math.random() > 0.5 ? 1.65 : 0.45))); }
+    const h2MyActions  = randomActions(myH2);
+    const h2OppActions = randomActions(oppH2);
+    return { myScore: actionsToScore(h2MyActions), oppScore: actionsToScore(h2OppActions), events: buildHalfEvents(h2MyActions, h2OppActions, scorers, 41, 80) };
+  }
+
+  return { firstHalf, simulateSecondHalf };
+}
+
+/** Simulate a match between two teams using their pre-computed ratings (friends mode). */
+export function simulateFriendsMatch(
+  ratingA: number,
+  ratingB: number,
+): { scoreA: number; scoreB: number; winnerIsA: boolean } {
+  const [countA, countB] = buildMatchCounts(ratingA, ratingB);
+  let scoreA = actionsToScore(randomActions(countA));
+  let scoreB = actionsToScore(randomActions(countB));
+  if (scoreA === scoreB) {
+    if (Math.random() > 0.5) scoreA += 3; else scoreB += 3;
+  }
+  return { scoreA, scoreB, winnerIsA: scoreA > scoreB };
 }
 
 /* ── Playoff immersive match (two-halves, halftime choice) ──── */
@@ -282,10 +335,12 @@ export function beginPlayoffMatch(
   myTeamRating: number,
   entry: CalendarEntry,
   selectedPlayers: Player[],
+  neutral = false,
+  mentalCoachBonus = 0,
 ): PlayoffMatchHandle {
   const opponentRating = getTeamStrength(entry.opponent);
-  const myEffective = myTeamRating + (entry.isHome ? HOME_BONUS : 0);
-  const oppEffective = opponentRating + (entry.isHome ? 0 : HOME_BONUS);
+  const myEffective  = myTeamRating * (1 + mentalCoachBonus) + (neutral ? 0 : entry.isHome ? HOME_BONUS : 0);
+  const oppEffective = opponentRating  + (neutral ? 0 : entry.isHome ? 0 : HOME_BONUS);
 
   const [myTotal, oppTotal] = buildMatchCounts(myEffective, oppEffective);
   const scorers = buildWeightedScorers(selectedPlayers);

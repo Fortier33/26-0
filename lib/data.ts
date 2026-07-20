@@ -7,19 +7,19 @@ export const clubs: Record<string, Player[]> = { ...historicalClubs };
 export const allPlayers: Player[] = Object.values(clubs).flat();
 
 export const OPPONENTS = [
-  "Union Bordeaux-Bègles 25-26",
-  "Stade Rochelais 25-26",
-  "RC Toulon 25-26",
-  "ASM Clermont 25-26",
-  "Racing 92 25-26",
-  "Castres Olympique 25-26",
-  "Section Paloise 25-26",
-  "Aviron Bayonnais 25-26",
-  "Montpellier Hérault Rugby 25-26",
-  "USA Perpignan 25-26",
-  "LOU Rugby 25-26",
-  "US Montauban 25-26",
-  "Stade Français Paris 25-26",
+  "Stade Toulousain",
+  "Stade Rochelais",
+  "Stade Français Paris",
+  "Union Bordeaux-Bègles",
+  "Racing 92",
+  "Montpellier Hérault Rugby",
+  "Section Paloise",
+  "RC Toulon",
+  "LOU Rugby",
+  "ASM Clermont",
+  "Castres Olympique",
+  "Aviron Bayonnais",
+  "USA Perpignan",
 ];
 
 export const fieldPositions: Record<string, FieldSlot> = {

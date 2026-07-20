@@ -26,7 +26,32 @@ export type MatchResult = {
   result: "Victoire" | "Défaite" | "Nul";
 };
 
-export type Screen = "home" | "draft" | "season" | "playoffs" | "recap" | "mercato";
+export type Screen = "home" | "draft-home" | "career-home" | "draft" | "season" | "playoffs" | "recap" | "mercato" | "reveal" | "friends-setup" | "friends-draft" | "friends-recap" | "friends-bracket" | "friends-champion";
+
+export type FriendsTeam = {
+  id: number;
+  name: string;
+  colorHex: string;
+  players: Player[];
+  isBot: boolean;
+};
+
+export type FriendsBracketMatch = {
+  id: string;
+  round: string;
+  teamA: FriendsTeam | null;
+  teamB: FriendsTeam | null;
+  scoreA: number | null;
+  scoreB: number | null;
+  winner: FriendsTeam | null;
+};
+
+export type FriendsBracket = {
+  teams: FriendsTeam[];
+  matches: FriendsBracketMatch[];
+  currentMatchIndex: number;
+  champion: FriendsTeam | null;
+};
 
 export type SeasonRecord = {
   seasonNumber: number;
@@ -83,6 +108,6 @@ export type RoundMatchResult = {
   awayScore: number;
 };
 
-export type ClubUpgrade = "stadium" | "recruiter" | "trainer" | "marketing";
+export type ClubUpgrade = "stadium" | "recruiter" | "trainer" | "marketing" | "transport" | "mentalCoach";
 
 export type UpgradeGrades = Record<ClubUpgrade, 0 | 1 | 2 | 3>;
